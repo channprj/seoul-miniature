@@ -62,6 +62,8 @@ uniform vec4 uSeason;   // 봄, 여름, 가을, 겨울 가중치
 uniform float uTime, uDay, uRain;
 uniform sampler2D uTiles, uTileIdx;   // 배경 타일 아틀라스와 이 단계의 칸 색인(bgtiles.js)
 uniform float uTileOn;                // 1 = 타일 경로(uBg 는 z1 바탕, 그림 단계 = uF)
+uniform sampler2D uCrown;             // 수관 마스크(assets/redraw/crown.png, 지도 px; tools/redraw/make_crown.py): r 0 = 정보 없음(클래스 맵대로), 1 = 나무 없음, 2~255 = 새 수관이 칸을 덮는 비율. g = 그루 번호
+uniform float uCrownOn;               // 마스크가 있으면 1
 uniform sampler2D uSurf;              // z4·z8 표면 버퍼(FS_SURF): r 윗면, g 평지, b 둘레 윗면 비율. 지도 px 해상도, 창 영역만
 uniform vec2 uSurfOrg;                // 표면 버퍼 (0,0) 의 지도 px
 out vec4 o;
@@ -74,6 +76,17 @@ vec3 tileRead(ivec2 b){
   return texelFetch(uBg, b / f, 0).rgb;
 }
 int semAt(ivec2 q){ q = clamp(q, ivec2(0), ivec2(MAPSZ) - 1); return int(texelFetch(uSem, q, 0).r * 255.0 + 0.5); }
+// 수관 마스크로 바로잡은 클래스: 그림을 다시 그리며 나무 자리가 바뀐 곳은 클래스·깊이 맵의 나무가 그림과 어긋난다(옛 자리엔 잔디만, 새 자리는 녹지 칸).
+// 마스크가 있는 칸은 그것을 따른다: 수관이 칸의 4할 넘게 덮으면 수목, 아니면 수목 칸도 녹지.
+// (덜 덮인 가장자리 칸까지 수목으로 치면 나무 밑 그림자의 짙은 초록이 같이 물든다.)
+const int CROWN_MIN = 102;
+int crownAt(ivec2 q){ return uCrownOn > 0.5 ? int(texelFetch(uCrown, clamp(q, ivec2(0), ivec2(MAPSZ) - 1), 0).r * 255.0 + 0.5) : 0; }
+int semC(ivec2 q){
+  int s = semAt(q), cr = crownAt(q);
+  if (cr > CROWN_MIN) { if (s == 1 || s == 3 || s == 5 || s == 11) s = 10; }
+  else if (cr >= 1 && s == 10) s = 3;
+  return s;
+}
 // 클래스 맵은 0.5 m 라 그림의 경계와 어긋난다(칸 단위로 지붕이 단풍색이 되거나 수관 가장자리가 초록으로 남는다. 깊은 단계일수록 크게 보인다).
 // 그림은 팔레트 색이라 초록(수목·잔디)·파랑(물)이 다른 색과 뚜렷이 갈린다 → 텍셀 색으로 다시 가른다:
 //   식생·수면 칸 안이어도 그 색이 아닌 텍셀(지붕, 줄기, 외곽선, 돌)은 빼고, 바로 옆 칸으로 넘어간 그 색 텍셀은 넣는다.
@@ -96,7 +109,7 @@ int refineSem(ivec2 p, int sem, vec3 c){
   if (sem == 10) return lawnG ? 3 : 10;
   int v = sem == 3 ? 3 : 0;
   for (int i = 0; i < 8; i++) {
-    int s = semAt(p + N8[i]);
+    int s = semC(p + N8[i]);
     if (s == 10 && !lawnG) return 10;
     if (s == 10 || s == 3) v = 3;
   }
@@ -153,7 +166,7 @@ void main(){
       ivec2 o2 = ivec2(k & 1, k >> 1), cq = clamp(si0 + o2, ivec2(0), ivec2(MAPSZ) - 1);
       vec3 dc = c - texelFetch(uBg, cq, 0).rgb;
       sw[k] = ((o2.x == 1 ? f.x : 1.0 - f.x) * (o2.y == 1 ? f.y : 1.0 - f.y) + 0.02) / (0.004 + dot(dc, dc));
-      ss[k] = semAt(cq);
+      ss[k] = semC(cq);
       vec3 sf = texelFetch(uSurf, clamp(cq - ivec2(uSurfOrg), ivec2(0), textureSize(uSurf, 0) - 1), 0).rgb;
       sfr[k] = sf.r; sfg[k] = sf.g; sfb[k] = sf.b;
     }
@@ -174,7 +187,10 @@ void main(){
   float dq = bgDepth(q);
   float zq = heightOf(q, dq);
   // 의미 클래스(밑그림에서 온 맵): 2 도로, 3 녹지, 4 수면, 5 궁궐 마당, 6/7 건물 지붕/벽, 8/9 궁궐 지붕/벽, 10 수목, 11 보행로
-  int sem = semAt(q);
+  int sem = semC(q);
+  ivec2 crg = uCrownOn > 0.5 ? ivec2(texelFetch(uCrown, q, 0).rg * 255.0 + 0.5) : ivec2(0);
+  int crown = crg.x, treeId = crg.y;   // treeId: 나무 한 그루 단위 색 번호(1~255, 0 = 없음)
+  bool crownCell = crown > CROWN_MIN, noCrown = crown >= 1 && !crownCell;   // noCrown: 마스크가 "나무 없음"이라 한 칸(깊이 맵에는 옛 나무가 남아 있을 수 있다)
   int off = 0;
   if (sem == 10) {
     // 나뭇잎 흔들림: 수관을 4×3 그림 px 조각(벽돌 배치)으로 나눠 조각마다 1px(돌풍 때 가끔 2px) 가로로 옮긴다.
@@ -195,7 +211,7 @@ void main(){
       if (gust > 0.45 && r < pm * 0.3) off *= 2;
     }
     // 원본 텍셀도 수목일 때만 옮긴다 → 수관 가장자리가 벽·지붕 위로 번지지 않고 벽은 안 흔들린다
-    if (off != 0 && (semAt((a + ivec2(off * ok, 0)) / apm) != 10 || semAt((a + ivec2(off * ok / 2, 0)) / apm) != 10)) off = 0;
+    if (off != 0 && (semC((a + ivec2(off * ok, 0)) / apm) != 10 || semC((a + ivec2(off * ok / 2, 0)) / apm) != 10)) off = 0;
   }
   // 물결 너울: 그림 px 줄이 천천히 지나가는 사인파를 따라 1px 씩 좌우로 밀린다(6 Hz 계단). 얼면 멈춘다.
   float tq = floor(uTime * 6.0) / 6.0;
@@ -216,24 +232,29 @@ void main(){
   if (rs == 10) {
     // 잔디 위 나무 그늘은 그림에서 어두운 초록 점무늬이고 점 사이 색은 수관 하이라이트와 같은 색이라 색만으로는 못 가른다.
     // 클래스 맵도 그 자리를 수목으로 적어 둔 곳이 많다 → 깊이로 잰 높이가 땅(1 m 미만)이면 수관이 아니라 잔디 위 그늘이다.
-    if (zq < 1.0) rs = 3;
+    if (zq < 1.0 && !crownCell) rs = 3;
   }
   // z4·z8: 반대로 수목 칸의 밝은 초록이 땅보다 높으면 잔디가 아니라 수관의 밝은 면이다(깊은 단계 그림은 수관 하이라이트가 잔디만큼 밝다).
   // 잔디로 두면 겨울에 눈도 맨가지 색도 안 입어 초록 조각으로 남는다.
-  else if (rs == 3 && sem == 10 && apm > 2 && zq >= 1.5) rs = 10;
+  // 단, 칸 평균(바탕 z1)도 잔디만큼 밝으면 그 칸에는 나무가 없다(그림을 다시 그리며 나무가 옮겨져 맵에만 남은 옛 자리) → 잔디로 둔다.
+  else if (rs == 3 && sem == 10 && (crownCell ? crown > 128 : apm > 2 && zq >= 1.5 && dot(texelFetch(uBg, q, 0).rgb, vec3(.3,.59,.11)) < 0.52)) rs = 10;
   // z4·z8: 클래스 맵에 없는 나무(그림을 다시 그리며 자리가 옮겨진 수관): 맨땅·마당·길 칸의 짙은 초록 텍셀은 수관으로 본다(건물 칸의 초록 칠은 제외).
   else if (rs == 0 && apm > 2 && (sem == 1 || sem == 2 || sem == 5 || sem == 11) && isGreen(c) && lum < 0.40) rs = 10;
   // z4·z8 수관 속(칸 평균이 초록인 수목 칸, 땅보다 높음)의 초록 아닌 텍셀: 잎 사이 검은 틈·그늘 얼룩은 여름 그림에서는 그대로 두고,
   // 다른 계절에는 짙은 잎으로 보고 계절 색을 입힌다(단풍·벚꽃·눈 사이에 검은 얼룩으로 남지 않게).
   bool inCanopy = false;
-  if (apm > 2 && rs == 0 && sem == 10 && zq >= 1.0 && uSeason.y < 0.99) {
+  if (apm > 2 && rs == 0 && sem == 10 && (zq >= 1.0 || crownCell) && uSeason.y < 0.99) {
     vec3 cb = texelFetch(uBg, q, 0).rgb;
     // 칸 평균이 초록이거나, 칸 전체가 검은 덩어리(무채색·아주 어두움: 푸른 기가 도는 기와는 아님)
-    inCanopy = isGreen(cb) || (max(cb.r, max(cb.g, cb.b)) - min(cb.r, min(cb.g, cb.b)) < 0.06 && dot(cb, vec3(.3,.59,.11)) < 0.14);
-    if (inCanopy && lum < 0.16 && max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) < 0.12) {
+    bool lump = max(cb.r, max(cb.g, cb.b)) - min(cb.r, min(cb.g, cb.b)) < 0.06 && dot(cb, vec3(.3,.59,.11)) < 0.14;
+    inCanopy = isGreen(cb) || lump;
+    // 수관 마스크가 있는 칸은 그림의 검은 외곽선을 남긴다(그루가 따로 읽히게). 검은 덩어리만 잎으로 본다.
+    if ((crownCell ? lump : inCanopy) && lum < 0.16 && max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) < 0.12) {
       c = mix(c, vec3(0.10, 0.17, 0.10), 1.0 - uSeason.y);
       lum = dot(c, vec3(.3,.59,.11)); rs = 10;
     }
+    // 수관 속의 밝은 연노랑·크림색 텍셀(햇빛 받은 잎 하이라이트)도 잎이다 → 단풍·벚꽃 사이에 흰 낱알로 남지 않는다
+    else if ((inCanopy || crown > 128) && lum > 0.55 && c.g >= c.b && !(c.r > c.g * 1.25)) rs = 10;
   }
   float tree = rs == 10 ? 1.0 : 0.0;
   float lawn = rs == 3 ? 1.0 : 0.0;
@@ -247,7 +268,9 @@ void main(){
     float dq = bgDepth(q);
     if (dq < 1.0e8) cell5 = floor(worldOf(q, dq).xy / 5.0);
   }
-  float clump = hash(cell5);
+  float clump = hash(cell5), clump2 = hash(cell5 + 9.0);
+  // 수관 마스크에 그루 번호가 있으면 계절 색을 그루 단위로 고른다(5 m 격자는 한 그루를 두 색으로 가른다)
+  if (treeId > 0) { clump = hash(vec2(float(treeId), 3.0)); clump2 = hash(vec2(float(treeId), 12.0)); }
   // 계절 잡음은 옮겨 온 원본 텍셀 기준(꽃·단풍 점이 잎과 함께 움직이게)
   float fine = hash(vec2(uF > 1.5 ? fp + ivec2(off, 0) : fp));
   // 봄: 벚꽃(일부 나무) + 연두
@@ -261,7 +284,7 @@ void main(){
   // 가을: 단풍
   if (uSeason.z > 0.0) {
     vec3 pal = clump < 0.38 ? vec3(0.86,0.36,0.12) : (clump < 0.72 ? vec3(0.93,0.66,0.16) : vec3(0.70,0.17,0.13));
-    pal = mix(pal, vec3(0.42,0.52,0.20), step(0.9, hash(cell5 + 9.0)));
+    pal = mix(pal, vec3(0.42,0.52,0.20), step(0.9, clump2));
     vec3 s = pal * (0.35 + lum * 1.55) + (fine - 0.5) * 0.06;
     c = mix(c, s, tree * uSeason.z);
     c = mix(c, vec3(lum) * vec3(1.25, 1.08, 0.62), lawn * uSeason.z * 0.75);
@@ -283,15 +306,15 @@ void main(){
       float sat0 = max(c0.r, max(c0.g, c0.b)) - min(c0.r, min(c0.g, c0.b));
       bool wt = tree > 0.5;
       if (!wt && flatW <= 0.5 && lawn < 0.5) {
-        if (inCanopy) wt = !(c0.r > c0.g * 1.25 && sat0 > 0.22);
-        else if (lum < 0.16 && sat0 < 0.12 && sem != 6 && sem != 8) for (int i = 0; i < 8; i++) if (semAt(q + N8[i]) == 10) { wt = true; break; }
+        if (inCanopy) wt = !(c0.r > c0.g * 1.25 && sat0 > 0.22 && lum < 0.45);   // 어두운 붉은 갈색 = 줄기. 밝은 연노랑 하이라이트는 잎
+        else if (lum < 0.16 && sat0 < 0.12 && sem != 6 && sem != 8) for (int i = 0; i < 8; i++) if (semC(q + N8[i]) == 10) { wt = true; break; }
       }
       if (wt) {
         float l2 = mix(lum, dot(texelFetch(uBg, q, 0).rgb, vec3(.3,.59,.11)), 0.45);
         vec3 ws = l2 > 0.32 ? vec3(0.93,0.95,0.99) : l2 > 0.22 ? vec3(0.83,0.87,0.94) : l2 > 0.13 ? vec3(0.69,0.75,0.84) : vec3(0.54,0.60,0.71);
         c = mix(c, ws, uSeason.w);
         cover = 0.0;
-      } else if (flatW > 0.5 || (lawn > 0.5 && zq < 1.5)) {
+      } else if (flatW > 0.5 || (lawn > 0.5 && (zq < 1.5 || noCrown))) {
         // 평지: 깊이 잡음이 만드는 벽 판정은 쓰지 않는다. 눈 두께 무늬(z1·z2 와 같은 저주파)는 연속 좌표로 재서 세 단으로 끊는다.
         vec2 mc = fc / uF;
         vec3 wg = ((mc.x - MAPSZ.x * 0.5) * MPP + CX) * EX + ((MAPSZ.y * 0.5 - mc.y) * MPP + CY) * EY + (groundDepth(mc.y) + CAMVD) * VD;
@@ -1088,6 +1111,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
     // 깊이는 RG, 클래스 맵 둘은 R 만 쓴다 → RG8·R8 로 올려 RGBA8 대비 GPU 메모리를 줄인다(셰이더가 읽는 값은 같다)
     bg: tex(assets.bg, { mip: bgScale === 2 }), depth: tex(assets.depth, { internal: gl.RG8, format: gl.RG }),
     cls: tex(assets.cls, { internal: gl.R8, format: gl.RED }), sem: tex(assets.sem, { internal: gl.R8, format: gl.RED }),
+    crown: assets.crown ? tex(assets.crown, { internal: gl.RG8, format: gl.RG }) : null,   // 수관 마스크(없으면 클래스 맵대로)
     // 차량 깊이 코드·그림자는 R 만 읽는다 → R8
     veh: tex(assets.veh), vehDepth: tex(assets.vehDepth, { internal: gl.R8, format: gl.RED }), vehShadow: tex(assets.vehShadow, { internal: gl.R8, format: gl.RED }), people: tex(assets.people),
   };
@@ -1304,7 +1328,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
       const o = {};
       const rgba = (w, h) => w * h * 4;
       o.bg = rgba(...DIM.bg) * (bgScale === 2 ? 4 / 3 : 1);
-      o.maps = W * H * (2 + 1 + 1);
+      o.maps = W * H * (2 + 1 + 1 + (T.crown ? 2 : 0));
       o.sprites = rgba(...DIM.veh) + DIM.veh[0] * DIM.veh[1] * 2 + rgba(...DIM.people);
       o.hiSprites = Object.values(HI).reduce((n, a) => n + a.bytes, 0);
       o.fbo1 = rgba(W, H) + rgba(W, H) * 4 / 3 + rgba(W >> 1, H >> 1) * (FS ? 3 : 1) + (FQ ? rgba(W >> 2, H >> 2) : 0);
@@ -1392,6 +1416,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
         gl.uniform1f(pAlbedo.u.uF, F); gl.uniform1f(pAlbedo.u.uBgScale, tileOn ? F : bgScale);
         gl.uniform2f(pAlbedo.u.uOrg, ox, oy); gl.uniform1f(pAlbedo.u.uTileOn, tileOn ? 1 : 0);
         if (tileOn) { bind(3, tiles.atlas); gl.uniform1i(pAlbedo.u.uTiles, 3); bind(4, tiles.index(F)); gl.uniform1i(pAlbedo.u.uTileIdx, 4); }
+        bind(6, T.crown || T.sem); gl.uniform1i(pAlbedo.u.uCrown, 6); gl.uniform1f(pAlbedo.u.uCrownOn, T.crown ? 1 : 0);
         bind(5, SF ? SF.t : T.sem); gl.uniform1i(pAlbedo.u.uSurf, 5); gl.uniform2f(pAlbedo.u.uSurfOrg, x0 - 2, y0 - 2);
         bind(0, T.depth); gl.uniform1i(pAlbedo.u.uDepth, 0);
         bind(1, T.bg); gl.uniform1i(pAlbedo.u.uBg, 1);

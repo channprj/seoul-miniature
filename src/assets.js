@@ -55,13 +55,14 @@ async function image(name, onBytes, optional = false) {
 
 // 수치 맵(깊이·클래스): 브라우저 디코더를 거치지 않고 바이트를 직접 푼다(png.js 머리말: 사파리가 회색조 값을 바꾼다).
 // → ImageData(없으면 같은 모양의 객체). 못 풀면 예전처럼 브라우저 디코더로.
-async function dataMap(name, onBytes) {
-  const u8 = await bytes(name, { onBytes });
+async function dataMap(name, onBytes, optional = false) {
+  const u8 = await bytes(name, { onBytes, optional });
+  if (!u8) return null;
   try {
     const m = await decodePng(u8);
     return typeof ImageData === 'function' ? new ImageData(m.data, m.width, m.height) : m;
   } catch (e) { console.warn(`${name}: 직접 디코드 실패, 브라우저 디코더로 읽습니다`, e); }
-  return image(name);
+  return image(name, undefined, optional);
 }
 
 // 있으면 그림, 없으면(404·오프라인 HTML 에 안 들어 있음) null. 네트워크 오류는 예외.
@@ -165,6 +166,8 @@ export async function loadAssets(onProgress = () => {}, { res = pickResolution()
   const out = { res, tiles: man, phone: isPhone() };
   await Promise.all([
     sceneJson(onBytes('scene')).then((s) => { out.scene = s; done('scene'); }),
+    // 수관 마스크(선택): 다시 그린 그림의 실제 나무 자리. 없으면 클래스 맵의 수목 칸을 그대로 쓴다
+    dataMap('redraw/crown.png', undefined, true).then((m) => { out.crown = m && m.width === 2752 ? m : null; }, () => { out.crown = null; }),
     ...Object.keys(names).map((k) => (k === 'bg' ? image : dataMap)(names[k], onBytes(k)).then((im) => { out[k] = im; done(k); })),
   ]);
   return out;
