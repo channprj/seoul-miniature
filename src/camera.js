@@ -4,6 +4,8 @@ export function createCamera(canvas, W, H) {
   const cam = {
     cx: W / 2, cy: H / 2, zoom: 1, dpr: 1, onUserInput: null,
     _tz: 1, _ax: 0, _ay: 0, _amx: 0, _amy: 0, _zooming: false, _vx: 0, _vy: 0, _locked: false, _fly: null, _minZ: 0.2, _maxZ: 9,
+    // 휴대폰 경로에서 main 이 정한다. maxScale = 최대 배율(기기 px / 지도 px), tapSteps = 터치 더블탭이 멈추는 배율들(오름차순)
+    maxScale: 0, tapSteps: null,
   };
   let cssW = 1, cssH = 1;
 
@@ -12,10 +14,12 @@ export function createCamera(canvas, W, H) {
     cssW = canvas.clientWidth; cssH = canvas.clientHeight;
     canvas.width = Math.round(cssW * cam.dpr); canvas.height = Math.round(cssH * cam.dpr);
     cam._minZ = Math.min(cssW / W, cssH / H) * 0.82;
+    if (cam.maxScale) cam._maxZ = Math.max(cam._minZ, cam.maxScale / cam.dpr);
+    cam._tz = Math.min(cam._maxZ, cam._tz); cam.zoom = Math.min(cam._maxZ, cam.zoom);
     cam._tz = Math.max(cam._minZ, cam._tz); cam.zoom = Math.max(cam._minZ, cam.zoom);
   };
   // vh = 화면 세로에 들어오는 지도 px 수
-  cam.set = (x, y, vh) => { cam.cx = x; cam.cy = y; cam.zoom = cam._tz = cssH / vh; cam._vx = cam._vy = 0; cam._zooming = false; };
+  cam.set = (x, y, vh) => { cam.cx = x; cam.cy = y; cam.zoom = cam._tz = Math.min(cam._maxZ, cssH / vh); cam._vx = cam._vy = 0; cam._zooming = false; };
   cam.lock = (on) => { cam._locked = on; cam._fly = null; };
   cam.flyTo = (x, y, vh, dur = 1.6) => {
     cam._fly = { t: 0, dur, x0: cam.cx, y0: cam.cy, z0: Math.log(cam.zoom), x1: x, y1: y, z1: Math.log(Math.min(cam._maxZ, cssH / vh)) };
@@ -56,6 +60,14 @@ export function createCamera(canvas, W, H) {
     clamp();
   };
 
+  // 터치 더블탭 확대 폭: tapSteps 가 있으면 지금보다 15 % 이상 큰 다음 단계까지(한 번에 최대 3배).
+  // 단계를 정수 배율로 두면 원본 텍셀이 기기 px 정수배에 멈춰 픽셀 크기가 고르다. 없으면 1.8배.
+  const tapFactor = () => {
+    const st = cam.tapSteps;
+    if (!st) return 1.8;
+    const s = cam._tz * cam.dpr, next = st.find((v) => v > s * 1.15);
+    return next ? Math.min(3, next / s) : 1;
+  };
   const input = () => { cam._fly = null; cam.onUserInput?.(); };
   const zoomAt = (sx, sy, factor) => {
     if (cam._locked) { input(); if (cam._locked) return; }
@@ -128,7 +140,7 @@ export function createCamera(canvas, W, H) {
         cam._vx = cam._vy = 0;
         const touch = (e.pointerType || lastType) !== 'mouse';
         if (touch && lastTap && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
-          lastTap = null; zoomAt(e.clientX, e.clientY, 1.8);
+          lastTap = null; zoomAt(e.clientX, e.clientY, tapFactor());
         } else {
           lastTap = { x: e.clientX, y: e.clientY, t: now };
           cam.onTap?.(e.clientX, e.clientY, e.pointerType || lastType);

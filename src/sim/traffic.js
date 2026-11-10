@@ -53,6 +53,8 @@ const KIND_WEIGHTS = [
   ['taxi', 61],
   ['van', 43],
 ];
+// 버스 노선(primary·secondary 만 지나는 경로, 전체 경로의 약 1/6) 위 버스 비율. 110~150 대에서
+// 지도 위 버스 평균 4~6 대, 전체 차량 중 약 4 %
 const BUS_SHARE_ON_BUS_ROUTES = 0.25;
 // 긴 차(버스)의 축간 거리 = len·2·AXLE. 앞뒤 축이 경로 위에 있고 차체는 두 축을 잇는 선 위:
 // 굽은 길에서 끝단은 바깥, 가운데는 안쪽으로 벗어난다. len/√2 이면 양쪽 최대 이탈이 비슷해진다
@@ -750,13 +752,15 @@ function obbHit(ax, ay, ath, ahl, ahw, bx, by, bth, bhl, bhw) {
 }
 
 // 버스(bodyPose 의 축 모델 자세)가 버스 가능 차선을 지날 때의 차체와, 다른 차선 위 각 위치에 선
-// 차의 차체가 BUS_PAD 안으로 닿는 곳마다 잠금 구역을 하나 더 둔다. 구간은 양쪽 모두 차체 "중심"
+// 차의 차체가 BUS_PAD 안으로 닿는 곳마다 구역을 하나 더 둔다. 구간은 양쪽 모두 차체 "중심"
 // 위치 범위다 (encountersFor 가 차 길이 반만큼 앞뒤로 옮겨 잡고 놓는다): 차체가 구간을 덮는 동안이
 // 아니라 실제로 닿을 수 있는 자세인 동안만 잡는다.
 // - 버스 대 아무 차 (busSide 0): 상대 차는 가장 큰 승용 차체. 버스 쪽은 버스만, 상대 쪽은 버스가
-//   다가올 때(armed)만 참여한다: 버스가 없으면 승용차 흐름은 그대로다.
-// - 버스 대 버스 (busSide 2): 상대 차선도 버스 가능이면 버스 차체끼리. 양쪽 모두 버스만.
+//   다가올 때(armed, 잠금일 때)만 참여한다: 버스가 없으면 승용차 흐름은 그대로다. 그 쌍에 기존
+//   순서 구역(합류·분류·엇갈림)이 있으면 같은 기준점의 순서 구역, 없으면 잠금 (zonesFromHits).
+// - 버스 대 버스 (busSide 2): 상대 차선도 버스 가능이면 버스 차체끼리. 양쪽 모두 버스만, 늘 잠금.
 // 기존 잠금 구역이 이미 두 자세를 모두 덮는 닿음은 빼서 (교차로 대부분) 같은 충돌을 두 번 잠그지 않는다.
+const YIELD_CLEAR = 15; // m, 양보받은 버스가 (양보 시점보다 자기 길이 +) 이만큼 가면 양보를 푼다
 const BUS_PAD = 0.15; // m, 차체 사이 여유 (발자국 가드 2·GUARD_PAD 포함)
 function buildBusZones(segs, zones, L, W, carL, carW, carMinL) {
   const cell = 4;
@@ -800,7 +804,9 @@ function buildBusZones(segs, zones, L, W, carL, carW, carMinL) {
   const hw = W / 2 + BUS_PAD / 2;
   const chl = carL / 2 + BUS_PAD / 2;
   const chw = carW / 2 + BUS_PAD / 2;
-  const span = Math.ceil((Math.hypot(L / 2, W / 2) + Math.hypot(L / 2, W / 2) + BUS_PAD) / cell);
+  const reach = 2 * Math.hypot(hl, hw); // 이보다 먼 중심끼리는 닿을 수 없다
+  const reach2 = reach * reach;
+  const span = Math.ceil(reach / cell);
   const pairs = [new Map(), new Map()]; // 버스 대 아무 차, 버스 대 버스
   const base = zones.length;
   // 기존 잠금 구역이 덮는가: 버스 중심 s, 상대 중심 t (상대 길이 ol) 에서 둘 다 그 구역을 잡고 있다
@@ -851,6 +857,9 @@ function buildBusZones(segs, zones, L, W, carL, carW, carMinL) {
                 if (b === X.idx || (pr && b === pr.g.idx) || (su && b === su.g.idx)) continue;
                 const j = arr[k + 1];
                 const sb = samp[b];
+                const ddx = sb.cx[j] - ox;
+                const ddy = sb.cy[j] - oy;
+                if (ddx * ddx + ddy * ddy > reach2) continue;
                 const B = segs[b];
                 for (let w = 0; w < 2; w++) {
                   const hit = w === 0 ? obbHit(ox, oy, th, hl, hw, sb.cx[j], sb.cy[j], sb.ct[j], chl, chw) : sb.bx && obbHit(ox, oy, th, hl, hw, sb.bx[j], sb.by[j], sb.bt[j], hl, hw);
@@ -1590,6 +1599,13 @@ export function createTraffic(scene, opts = {}) {
         v._zr = bl ? 'blocked' : 'fair';
         v._zb = e.zone;
         if (ok) v._zh = _bh;
+        // 버스가 쥔 잠금에 막혀 양보했으면 그 버스가 지나갈 때까지 순서 구역에서도 뒤에 선다
+        // (버스 중심이 잠금 구간을 벗어나 놓는 순간 순서 구역 순위가 뒤집히면 버스 앞머리가 이미
+        // 들어간 채 서로 막는다)
+        if (bl && ok && _bh && _bh.len > 6) {
+          v._yb = _bh;
+          v._ybR = _bh._r;
+        }
         if (ok && v._req === Infinity) v._req = simT;
         ok = false;
         registerWait(z, e.side, v);
@@ -1667,7 +1683,8 @@ export function createTraffic(scene, opts = {}) {
       for (let j = 0; j < O.length; j++) {
         const o = O[j];
         if (o.v === v) continue;
-        if (!(o.s > pMe || (o.s === pMe && o.v.id < v.id))) continue;
+        if (o.v._yb === v) continue;
+        if (!(o.s > pMe || (o.s === pMe && o.v.id < v.id) || v._yb === o.v)) continue;
         // 앞 순서인 차가 내가 잡은 잠금을 기다리고 있으면 내가 먼저 (안 그러면 서로 기다린다)
         if (o.v._why === 'zone' && o.v._zr === 'blocked' && o.v._zh === v) continue;
         const L = Math.max(e.enter, o.s - o.v.len / 2 + e.off - MIN_GAP - zones[e.zone].extra);
@@ -1693,6 +1710,8 @@ export function createTraffic(scene, opts = {}) {
     let maxFront = Infinity;
     const idm = (gap, dv, s0) => idmAcc(v.v, vd, A, T, gap, dv, s0);
     const prevWhy = v._why;
+    const yb = v._yb;
+    if (yb && (yb._dead || yb._r - v._ybR > yb.len + YIELD_CLEAR)) v._yb = null;
     v._why = 'free';
 
     const gap = findLeader(v);
@@ -1792,6 +1811,10 @@ export function createTraffic(scene, opts = {}) {
     }
     if (minEnter < Infinity && minEnter > -Infinity && (stopAt <= minEnter || (v.v < 0.1 && maxFront < minEnter - 0.3))) {
       for (let i = v._ei; i < enc.length; i++) if (enc[i].held) release(v, enc[i]);
+    } else if (minEnter === -Infinity && stopAt < Infinity) {
+      // 이미 한 구역 안에 있어도 빨간불 정지선 너머 구역은 돌려준다 (긴 버스는 정지선 앞에서도 옆
+      // 차로 구역 안에 서 있곤 해서, 상자 안 구역을 신호 한 바퀴 내내 쥐고 있었다)
+      for (let i = v._ei; i < enc.length; i++) if (enc[i].held && enc[i].enter >= stopAt) release(v, enc[i]);
     }
 
     if (acc < -9) acc = -9;

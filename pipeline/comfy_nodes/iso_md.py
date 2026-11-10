@@ -106,13 +106,13 @@ class IsoSeamlessSample:
                              "spec": ("STRING", {"multiline": True}), "seed": ("INT", {"default": 1, "min": 0, "max": 2 ** 63}),
                              "steps": ("INT", {"default": 8, "min": 1, "max": 100}),
                              "sampler_name": (comfy.samplers.KSAMPLER_NAMES,), "scheduler": (comfy.samplers.SCHEDULER_NAMES,)},
-                "optional": {"init": ("LATENT",)}}
+                "optional": {"init": ("LATENT",), "image2": ("IMAGE",), "init_image": ("IMAGE",)}}
 
     RETURN_TYPES = ("LATENT",)
     FUNCTION = "run"
     CATEGORY = "iso-seoul"
 
-    def run(self, model, clip, vae, image, spec, seed, steps, sampler_name, scheduler, init=None):
+    def run(self, model, clip, vae, image, spec, seed, steps, sampler_name, scheduler, init=None, image2=None, init_image=None):
         spec = json.loads(spec)
         ww, wh = spec["win"]
         lw, lh = ww // 8, wh // 8
@@ -130,8 +130,11 @@ class IsoSeamlessSample:
             if w.get("skip"):
                 w["ref_model"] = model.model.process_latent_in(ref)
             else:
-                cond = TextEncodeQwenImageEditPlus.execute(clip, w["prompt"], None, crop).result[0]
-                w["cond"] = node_helpers.conditioning_set_values(cond, {"reference_latents": [ref]}, append=True)
+                # image2(선택): 같은 자리의 생김새 참조. 텍스트 인코더에 보여 주고, spec.ref2 면 참조 latent 로도 붙인다
+                crop2 = None if image2 is None else image2[:, w["y"]:w["y"] + wh, w["x"]:w["x"] + ww, :3]
+                cond = TextEncodeQwenImageEditPlus.execute(clip, w["prompt"], None, crop, crop2).result[0]
+                refs = [ref] + ([vae.encode(crop2)] if crop2 is not None and spec.get("ref2") else [])
+                w["cond"] = node_helpers.conditioning_set_values(cond, {"reference_latents": refs}, append=True)
             comfy.model_management.throw_exception_if_processing_interrupted()
         shape = list(first.shape[:-2]) + [Hp // 8, Wp // 8]
         mask = None
@@ -139,6 +142,9 @@ class IsoSeamlessSample:
             latent = init["samples"]
             assert list(latent.shape) == shape, f"init {tuple(latent.shape)} != canvas {shape}"
             mask = init.get("noise_mask")
+        elif init_image is not None:
+            latent = vae.encode(init_image[:, :, :, :3])       # img2img: spec.denoise < 1 과 함께 쓴다
+            assert list(latent.shape) == shape, f"init_image latent {tuple(latent.shape)} != canvas {shape}"
         else:
             latent = torch.zeros(shape)
         noise = comfy.sample.prepare_noise(latent, seed)
@@ -146,7 +152,8 @@ class IsoSeamlessSample:
         any_cond = next(w["cond"] for w in wins if "cond" in w)
         g.set_conds(any_cond, any_cond)
         g.set_cfg(1.0)
-        sigmas = comfy.samplers.calculate_sigmas(model.get_model_object("model_sampling"), scheduler, steps)
+        denoise = float(spec.get("denoise", 1.0))
+        sigmas = comfy.samplers.calculate_sigmas(model.get_model_object("model_sampling"), scheduler, steps if denoise >= 1 else int(steps / denoise))[-(steps + 1):]
         g.setup(wins, lw, lh, spec.get("step_grids", [0] * steps), sigmas, spec.get("ramp", 16), spec.get("pow", 1.0), spec.get("dump"))
         cb = latent_preview.prepare_callback(model, steps)
         out = g.sample(noise, latent, comfy.samplers.sampler_object(sampler_name), sigmas, denoise_mask=mask, callback=cb, seed=seed)

@@ -5,6 +5,7 @@
 //   B  lit    : 낮/밤 조명, 창문 불빛, 구름 그림자, 디오라마 옆면
 //   →  screen : 카메라 변환 + sharp-bilinear 확대 / mip 축소 + 눈·비
 const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+import { createBgTiles } from './bgtiles.js';
 const SPR_STRIDE = 9;   // dstX,dstY,w,h, srcX,srcY, depth, kind, param
 const LGT_STRIDE = 6;   // x,y,radius, r,g,b
 
@@ -19,7 +20,10 @@ const vec3 VD = vec3(${P.vd.join(',')});
 const float CX = ${P.cx}; const float CY = ${P.cy}; const float CAMVD = ${P.camDotVd};
 const float MPP = ${P.m.toFixed(4)};
 uniform sampler2D uDepth;
-uniform float uF;   // 합성 해상도 배율(1 또는 2). gl_FragCoord / uF = 지도 px
+uniform float uF;   // 합성 해상도 배율(1 또는 2). (gl_FragCoord + uOrg) / uF = 지도 px
+uniform vec2 uOrg;  // 창 합성(휴대폰 2배): 이 FBO 의 (0,0) 텍셀이 합성 격자(지도 px × uF)에서 놓인 자리. 전체 FBO 면 0
+// 합성 격자 좌표 q 를 FBO 텍셀로(창 밖은 가장자리)
+ivec2 fbAt(sampler2D t, ivec2 q){ return clamp(q - ivec2(uOrg), ivec2(0), textureSize(t, 0) - 1); }
 float bgDepth(ivec2 p){
   p = clamp(p, ivec2(0), ivec2(MAPSZ) - 1);
   vec2 rg = floor(texelFetch(uDepth, p, 0).rg * 255.0 + 0.5);
@@ -56,13 +60,22 @@ uniform sampler2D uBg, uSem;
 uniform float uBgScale;
 uniform vec4 uSeason;   // 봄, 여름, 가을, 겨울 가중치
 uniform float uTime, uDay, uRain;
+uniform sampler2D uTiles, uTileIdx;   // 원본 해상도 타일 아틀라스와 칸 색인(bgtiles.js)
+uniform float uTileOn;
 out vec4 o;
+// 0.25 m/px 그림 좌표 b: 올라온 타일이면 아틀라스, 아니면 절반 해상도 그림(받는 동안)
+vec3 tileRead(ivec2 b){
+  b = clamp(b, ivec2(0), ivec2(MAPSZ) * 2 - 1);
+  vec4 e = texelFetch(uTileIdx, b >> 8, 0);
+  if (e.b > 0.5) return texelFetch(uTiles, ivec2(e.rg * 255.0 + 0.5) * 256 + (b & 255), 0).rgb;
+  return texelFetch(uBg, b >> 1, 0).rgb;
+}
 int semAt(ivec2 q){ q = clamp(q, ivec2(0), ivec2(MAPSZ) - 1); return int(texelFetch(uSem, q, 0).r * 255.0 + 0.5); }
 // 배경은 0.25 m/px(지도 px 의 2배). 1배 합성일 때는 mip 1(2×2 평균)을 읽는다.
 // off = 그림 픽셀 단위 가로 이동(나뭇잎·물결). 1배 합성에서는 옮긴 2×2 를 직접 평균한다.
 vec3 bgRead(ivec2 p, ivec2 fp, int off){
   if (uBgScale > 1.5) {
-    if (uF > 1.5) return texelFetch(uBg, fp + ivec2(off, 0), 0).rgb;
+    if (uF > 1.5) return uTileOn > 0.5 ? tileRead(fp + ivec2(off, 0)) : texelFetch(uBg, fp + ivec2(off, 0), 0).rgb;
     if (off == 0) return texelFetch(uBg, p, 1).rgb;
     ivec2 b = p * 2 + ivec2(off, 0);
     return 0.25 * (texelFetch(uBg, b, 0).rgb + texelFetch(uBg, b + ivec2(1, 0), 0).rgb + texelFetch(uBg, b + ivec2(0, 1), 0).rgb + texelFetch(uBg, b + ivec2(1, 1), 0).rgb);
@@ -70,8 +83,9 @@ vec3 bgRead(ivec2 p, ivec2 fp, int off){
   return texelFetch(uBg, p + ivec2(off, 0), 0).rgb;
 }
 void main(){
-  ivec2 p = ivec2(gl_FragCoord.xy / uF);
-  ivec2 fp = ivec2(gl_FragCoord.xy);
+  vec2 fc = gl_FragCoord.xy + uOrg;
+  ivec2 p = ivec2(fc / uF);
+  ivec2 fp = ivec2(fc);
   float d = bgDepth(p);
   if (d > 1.0e8) { o = vec4(bgRead(p, fp, 0), 0.0); return; }
   // 그림 픽셀 좌표(움직임은 이 격자 단위로만 한다)와 지도 px 당 그림 픽셀 수
@@ -180,6 +194,7 @@ layout(location=1) in vec4 aDst;
 layout(location=2) in vec4 aSrc;   // srcX, srcY, depth, kind
 layout(location=3) in float aParam;
 const vec2 MAPSZ = vec2(${P.W}.0, ${P.H}.0);
+uniform float uF; uniform vec2 uOrg, uFb;   // 합성 배율, 창 원점(합성 텍셀), FBO 크기
 out vec2 vSrc; out vec2 vLocal; flat out float vDepth; flat out float vKind; flat out float vParam; flat out vec2 vSize;
 void main(){
   vec4 dst = aDst;
@@ -191,7 +206,7 @@ void main(){
   // 아틀라스는 지도 px 의 2배 해상도(geom.js SPRITE_SCALE)
   vLocal = aCorner * dst.zw; vSrc = aSrc.xy + vLocal * 2.0;
   vDepth = aSrc.z; vKind = aSrc.w; vParam = aParam; vSize = dst.zw;
-  gl_Position = vec4(px / MAPSZ * 2.0 - 1.0, 0.0, 1.0);
+  gl_Position = vec4((px * uF - uOrg) / uFb * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
 // kind: 0 차량, 1 사람, 2 차량 그림자, 3 단색 그림자(사람·새), 4 발광 점(전조등/미등), 5 신호등, 6 새(단색 px)
@@ -202,7 +217,7 @@ uniform float uShadowAmt;
 in vec2 vSrc; in vec2 vLocal; flat in float vDepth; flat in float vKind; flat in float vParam; flat in vec2 vSize;
 out vec4 o;
 void main(){
-  ivec2 p = ivec2(gl_FragCoord.xy / uF);
+  ivec2 p = ivec2((gl_FragCoord.xy + uOrg) / uF);
   ivec2 s = ivec2(floor(vSrc));
   float bd = bgDepth(p);
   int k = int(vKind + 0.5);
@@ -343,12 +358,13 @@ void main(){
 // 룩 2 블룸(지도 공간): 밝은 부분만 뽑아 1/2 → 1/4 로 줄인다. 화면 패스에서 가산만(그림은 안 흐린다).
 const FS_BRIGHT = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform float uF, uThr; out vec4 o;
+uniform sampler2D uSrc; uniform float uF, uThr; uniform vec2 uOrg; out vec4 o;
 void main(){
   ivec2 b = ivec2(gl_FragCoord.xy) * 2;
+  ivec2 hi = textureSize(uSrc, 0) - 1;
   vec3 s = vec3(0.0);
   for (int i = 0; i < 4; i++) {
-    vec3 c = texelFetch(uSrc, (b + ivec2(i & 1, i >> 1)) * int(uF), 0).rgb;
+    vec3 c = texelFetch(uSrc, clamp((b + ivec2(i & 1, i >> 1)) * int(uF) - ivec2(uOrg), ivec2(0), hi), 0).rgb;
     float l = max(c.r, max(c.g, c.b));
     s += c * max(0.0, l - uThr) / max(l, 1.0e-3);
   }
@@ -447,8 +463,9 @@ vec3 grade(vec3 c, int sem){
 }
 #endif
 void main(){
-  ivec2 p = ivec2(gl_FragCoord.xy / uF);
-  ivec2 fp = ivec2(gl_FragCoord.xy);
+  vec2 fc = gl_FragCoord.xy + uOrg;
+  ivec2 p = ivec2(fc / uF);
+  ivec2 fp = ivec2(gl_FragCoord.xy);   // 이 FBO 의 텍셀(알베도와 같은 창)
   float d = bgDepth(p);
   if (d > 1.0e8) {
     // 디오라마 옆면: 바로 위쪽에 지오메트리가 있으면 흙 단면을 그린다
@@ -457,7 +474,7 @@ void main(){
       if (q.y < 0) break;
       if (bgDepth(q) < 1.0e8) {
         float t = float(k) / 22.0;
-        vec3 top = texelFetch(uAlbedo, ivec2(vec2(q) * uF), 0).rgb;
+        vec3 top = texelFetch(uAlbedo, fbAt(uAlbedo, ivec2(vec2(q) * uF)), 0).rgb;
         vec3 soil = mix(vec3(0.47,0.36,0.27), vec3(0.23,0.18,0.16), t);
         soil *= 0.92 + 0.16 * hash(vec2(p.x / 2, k / 3));
         vec3 c = k <= 2 ? top * 0.72 : soil;
@@ -542,7 +559,7 @@ void main(){
         int jx = int(floor(hash3(vec3(float(p.y), tq, 3.0)) * 3.0)) - 1;
         ivec2 r = ivec2(p.x + jx, p.y - 2 * k);
         if (int(texelFetch(uSem, r, 0).r * 255.0 + 0.5) == 9) {
-          vec3 rc = texelFetch(uAlbedo, ivec2(vec2(r) * uF), 0).rgb;
+          vec3 rc = texelFetch(uAlbedo, fbAt(uAlbedo, ivec2(vec2(r) * uF)), 0).rgb;
           float rl = dot(rc, vec3(.3,.59,.11));
           vec3 glow = (rc * 0.4 + vec3(rl) * 0.6 + 0.05) * vec3(1.10, 0.80, 0.48);
           float rows = step(0.3, hash3(vec3(float(p.y), tq, 9.0)));   // 끊긴 줄 = 물결
@@ -605,6 +622,7 @@ ${L2 ? '#define LOOK2' : ''}
 uniform sampler2D uLit;
 uniform vec2 uMapSz, uCanvas, uOrigin;   // uOrigin: 화면 좌상단의 지도 좌표
 uniform float uScale, uTime, uSnow, uRain, uDay, uF;
+uniform vec2 uOrg, uFb;   // 합성 FBO 의 창 원점(합성 텍셀)과 크기. 전체 FBO 면 0 과 지도 크기 × uF
 uniform vec2 uTilt;
 #ifdef LOOK2
 uniform sampler2D uBH, uBQ; uniform float uBloom;   // 블룸 1/2, 1/4
@@ -619,8 +637,8 @@ void main(){
   if (ts >= 1.0) {
     vec2 t = m * uF - 0.5; vec2 i = floor(t); vec2 f = t - i;
     f = clamp((f - 0.5) * ts + 0.5, 0.0, 1.0);
-    uv = (i + 0.5 + f) / (uMapSz * uF);
-  } else uv = m / uMapSz;
+    uv = (i + 0.5 + f - uOrg) / uFb;
+  } else uv = (m * uF - uOrg) / uFb;
   vec4 c = texture(uLit, uv);
 #ifdef LOOK2
   if (uBloom > 0.0) c.rgb += (texture(uBH, m / uMapSz).rgb * 0.45 + texture(uBQ, m / uMapSz).rgb * 0.7) * uBloom;
@@ -640,7 +658,7 @@ void main(){
         float fi = float(i);
         float rr = sqrt((fi + 0.5) / 12.0) * rad / uScale;
         vec2 dv = vec2(cos(fi * 2.39996), sin(fi * 2.39996)) * rr;
-        acc += textureLod(uLit, (m + dv) / uMapSz, lod);
+        acc += textureLod(uLit, ((m + dv) * uF - uOrg) / uFb, lod);
       }
       c = acc / 13.0;
     }
@@ -712,7 +730,9 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
     return t;
   };
   const T = {
-    bg: tex(assets.bg, { mip: bgScale === 2 }), depth: tex(assets.depth), cls: tex(assets.cls), sem: tex(assets.sem),
+    // 깊이는 RG, 클래스 맵 둘은 R 만 쓴다 → RG8·R8 로 올려 RGBA8 대비 GPU 메모리를 줄인다(셰이더가 읽는 값은 같다)
+    bg: tex(assets.bg, { mip: bgScale === 2 }), depth: tex(assets.depth, { internal: gl.RG8, format: gl.RG }),
+    cls: tex(assets.cls, { internal: gl.R8, format: gl.RED }), sem: tex(assets.sem, { internal: gl.R8, format: gl.RED }),
     veh: tex(assets.veh), vehDepth: tex(assets.vehDepth), vehShadow: tex(assets.vehShadow), people: tex(assets.people),
   };
   const target = (w, h, filter, mip) => {
@@ -733,6 +753,33 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
   const SETS = { 1: { FA: target(W, H, gl.NEAREST, false), FB: target(W, H, gl.LINEAR, true) } };
   if (hiOk) SETS[2] = { FA: target(W * 2, H * 2, gl.NEAREST, false), FB: target(W * 2, H * 2, gl.LINEAR, false) };
   const FL = target(W >> 1, H >> 1, gl.LINEAR, false);
+  // 휴대폰 경로(절반 해상도 그림): 2배 합성은 화면 크기 창(FBO)으로만 하고, 배경은 보이는 칸의 원본 해상도 타일을 받는다.
+  //   창 크기 = 배율 s 에서 화면에 보이는 지도 영역 × 2 + 여유. s 이상 확대했을 때만 2배(s ≥ 2 → 원본 텍셀 ≥ 기기 1 px).
+  //   s 는 화면 크기마다 정한다: 창 ≤ 2048² 텍셀, 창이 덮는 타일 ≤ 48 칸(아틀라스 64 칸). 휴대폰 세로(780×1688)는 s = 2, 창 880×1788.
+  //   지도 전체 2배 FBO(5504×3392 두 장)를 만들지 않는다.
+  const PAD = 24, WIN_BUDGET = 2048 * 2048, WIN_TILES = 48;
+  const tiles = !SETS[2] && assets.tiles ? createBgTiles(gl, W, H) : null;
+  const winDims = (cw, ch, s) => [2 * (Math.ceil(cw / s) + 2 * PAD + 2), 2 * (Math.ceil(ch / s) + 2 * PAD + 2)];
+  let winS = { cw: 0, ch: 0, s: 2 };
+  const winScale = (cw, ch) => {
+    if (winS.cw !== cw || winS.ch !== ch) {
+      let s = 2;
+      for (;; s += 0.25) {
+        const [w, h] = winDims(cw, ch, s);
+        if (w * h <= WIN_BUDGET && (Math.ceil(w / 256) + 1) * (Math.ceil(h / 256) + 1) <= WIN_TILES) break;
+      }
+      winS = { cw, ch, s };
+    }
+    return winS.s;
+  };
+  let win = null;   // { FA, FB, cw, ch }
+  const ensureWin = (cw, ch) => {
+    if (win && win.cw === cw && win.ch === ch) return win;
+    if (win) for (const t of [win.FA, win.FB]) { gl.deleteTexture(t.t); gl.deleteFramebuffer(t.f); }
+    const [ww, wh] = winDims(cw, ch, winScale(cw, ch));
+    win = { FA: target(ww, wh, gl.NEAREST, false), FB: target(ww, wh, gl.LINEAR, false), cw, ch };
+    return win;
+  };
 
   const pAlbedo = compile(gl, VS_FULL, FS_ALBEDO(proj));
   // 룩별 스프라이트·조명 프로그램은 쓸 때 컴파일한다(첫 화면은 opts.look 하나만).
@@ -815,18 +862,26 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
     // 룩 2 정적 광원: Float32Array [x, y, 반경, r, g, b, 높이(m)] × n. 다음 밤 프레임에 한 번 굽는다.
     setStaticLights(data) { staticData = data; nStatic = data.length / 7; baked = false; },
     // 합성 배율: 확대 화면이고 0.25 m/px 배경이 올라가 있으면 2배
-    pickF(scale) { return SETS[2] && scale > 1.05 ? 2 : 1; },
+    pickF(scale) { return SETS[2] ? (scale > 1.05 ? 2 : 1) : (tiles && tiles.active && scale >= winScale(canvas.width, canvas.height) ? 2 : 1); },
+    tiles,
 
     // view: {originX, originY, scale}  (scale = 기기 px / 지도 px), env: 조명·계절 상태
     render(view, env) {
       const cw = canvas.width, ch = canvas.height;
       // 화면에 보이는 지도 영역만 합성(scissor). 축소 시 mip 경계 번짐을 막으려 여유를 둔다.
-      const pad = 24;
+      const pad = PAD;
       const x0 = Math.max(0, Math.floor(view.originX) - pad), y0 = Math.max(0, Math.floor(view.originY) - pad);
       const x1 = Math.min(W, Math.ceil(view.originX + cw / view.scale) + pad), y1 = Math.min(H, Math.ceil(view.originY + ch / view.scale) + pad);
       const vis = x1 > x0 && y1 > y0;
-      const F = this.pickF(view.scale);
-      const { FA, FB } = SETS[F];
+      let F = this.pickF(view.scale);
+      let FA, FB, ox = 0, oy = 0;
+      if (F === 2 && !SETS[2]) {
+        ({ FA, FB } = ensureWin(cw, ch));
+        ox = x0 * 2; oy = y0 * 2;
+        if ((x1 - x0) * 2 > FA.w || (y1 - y0) * 2 > FA.h) F = 1;   // 창에 안 들어가면(일어나지 않아야 함) 1배
+        else tiles.update(x0 * 2, y0 * 2, x1 * 2, y1 * 2);
+      }
+      if (F === 1 || SETS[2]) { ({ FA, FB } = SETS[F]); ox = oy = 0; }
       this.F = F;
       const set = progs(env.look);
       const { sprite: pSprite, lit: pLit, light: pLight, screen: pScreen } = set;
@@ -865,10 +920,13 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
         gl.enable(gl.SCISSOR_TEST);
         // ── A: albedo
         gl.bindFramebuffer(gl.FRAMEBUFFER, FA.f);
-        gl.viewport(0, 0, W * F, H * F); gl.scissor(x0 * F, y0 * F, (x1 - x0) * F, (y1 - y0) * F);
+        gl.viewport(0, 0, FA.w, FA.h); gl.scissor(x0 * F - ox, y0 * F - oy, (x1 - x0) * F, (y1 - y0) * F);
         gl.disable(gl.BLEND);
         gl.useProgram(pAlbedo.p);
-        gl.uniform1f(pAlbedo.u.uF, F); gl.uniform1f(pAlbedo.u.uBgScale, bgScale);
+        const tileOn = F === 2 && !SETS[2];
+        gl.uniform1f(pAlbedo.u.uF, F); gl.uniform1f(pAlbedo.u.uBgScale, tileOn ? 2 : bgScale);
+        gl.uniform2f(pAlbedo.u.uOrg, ox, oy); gl.uniform1f(pAlbedo.u.uTileOn, tileOn ? 1 : 0);
+        if (tileOn) { bind(3, tiles.atlas); gl.uniform1i(pAlbedo.u.uTiles, 3); bind(4, tiles.index); gl.uniform1i(pAlbedo.u.uTileIdx, 4); }
         bind(0, T.depth); gl.uniform1i(pAlbedo.u.uDepth, 0);
         bind(1, T.bg); gl.uniform1i(pAlbedo.u.uBg, 1);
         bind(2, T.sem); gl.uniform1i(pAlbedo.u.uSem, 2);
@@ -878,7 +936,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
         gl.bindVertexArray(emptyVao); gl.drawArrays(gl.TRIANGLES, 0, 3);
 
         gl.useProgram(pSprite.p);
-        gl.uniform1f(pSprite.u.uF, F);
+        gl.uniform1f(pSprite.u.uF, F); gl.uniform2f(pSprite.u.uOrg, ox, oy); gl.uniform2f(pSprite.u.uFb, FA.w, FA.h);
         bind(0, T.depth); gl.uniform1i(pSprite.u.uDepth, 0);
         bind(1, T.veh); gl.uniform1i(pSprite.u.uVeh, 1);
         bind(2, T.vehDepth); gl.uniform1i(pSprite.u.uVehDepth, 2);
@@ -914,9 +972,9 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
 
         // ── B: 조명
         gl.bindFramebuffer(gl.FRAMEBUFFER, FB.f);
-        gl.viewport(0, 0, W * F, H * F); gl.scissor(x0 * F, y0 * F, (x1 - x0) * F, (y1 - y0) * F);
+        gl.viewport(0, 0, FB.w, FB.h); gl.scissor(x0 * F - ox, y0 * F - oy, (x1 - x0) * F, (y1 - y0) * F);
         gl.useProgram(pLit.p);
-        gl.uniform1f(pLit.u.uF, F);
+        gl.uniform1f(pLit.u.uF, F); gl.uniform2f(pLit.u.uOrg, ox, oy);
         bind(0, T.depth); gl.uniform1i(pLit.u.uDepth, 0);
         bind(1, FA.t); gl.uniform1i(pLit.u.uAlbedo, 1);
         bind(2, FL.t); gl.uniform1i(pLit.u.uLight, 2);
@@ -938,7 +996,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
           gl.bindFramebuffer(gl.FRAMEBUFFER, FH.f); gl.viewport(0, 0, FH.w, FH.h);
           gl.scissor(x0 >> 1, y0 >> 1, ((x1 - x0) >> 1) + 2, ((y1 - y0) >> 1) + 2);
           gl.useProgram(set.bright.p);
-          bind(0, FB.t); gl.uniform1i(set.bright.u.uSrc, 0); gl.uniform1f(set.bright.u.uF, F); gl.uniform1f(set.bright.u.uThr, 0.86);
+          bind(0, FB.t); gl.uniform1i(set.bright.u.uSrc, 0); gl.uniform1f(set.bright.u.uF, F); gl.uniform1f(set.bright.u.uThr, 0.86); gl.uniform2f(set.bright.u.uOrg, ox, oy);
           gl.drawArrays(gl.TRIANGLES, 0, 3);
           gl.bindFramebuffer(gl.FRAMEBUFFER, FQ.f); gl.viewport(0, 0, FQ.w, FQ.h);
           gl.scissor(x0 >> 2, y0 >> 2, ((x1 - x0) >> 2) + 2, ((y1 - y0) >> 2) + 2);
@@ -959,6 +1017,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
       gl.uniform2f(pScreen.u.uMapSz, W, H); gl.uniform2f(pScreen.u.uCanvas, cw, ch);
       gl.uniform2f(pScreen.u.uOrigin, view.originX, view.originY);
       gl.uniform1f(pScreen.u.uScale, view.scale); gl.uniform1f(pScreen.u.uF, F); gl.uniform1f(pScreen.u.uTime, env.time);
+      gl.uniform2f(pScreen.u.uOrg, ox, oy); gl.uniform2f(pScreen.u.uFb, FB.w, FB.h);
       gl.uniform1f(pScreen.u.uSnow, env.snow); gl.uniform1f(pScreen.u.uRain, env.rain); gl.uniform1f(pScreen.u.uDay, env.day);
       gl.uniform2f(pScreen.u.uTilt, env.tilt || 0, env.tiltR || 0);
       if (L2) {

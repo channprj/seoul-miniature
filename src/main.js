@@ -105,13 +105,15 @@ async function boot() {
   let traffic, trafficKind = 'live';
   try {
     const mod = await import('./sim/traffic.js');
-    traffic = mod.createTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || 110) });
+    traffic = mod.createTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || 150) });   // 도심답게 막히지만 흐르는 수준(교착·강제 제거 0 확인)
   } catch (e) {
     console.warn('교통 sim 을 불러오지 못해 단순 대체를 씁니다:', e);
     traffic = createFallbackTraffic(scene); trafficKind = 'fallback';
   }
 
   const cam = createCamera(canvas, proj.W, proj.H);
+  // 휴대폰 경로(절반 해상도 그림 + 원본 타일): 최대 확대 = 원본 텍셀(0.25 m) 하나가 기기 4 px. 더블탭은 텍셀 1·2·4 px 배율에 멈춘다.
+  if (assets.res === 1) { cam.maxScale = 8; cam.tapSteps = [2, 4, 8]; }
   const state = {
     tod: Number(params.get('tod') || 9), autoTime: !params.has('tod'),
     season: Number(params.get('season') || 1), seasonW: [0, 0, 0, 0],

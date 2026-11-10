@@ -35,8 +35,10 @@ async function bytes(name, { optional = false, onBytes } = {}) {
   return u8;
 }
 
-async function image(name, onBytes) {
-  const blob = new Blob([await bytes(name, { onBytes })], { type: 'image/png' });
+async function image(name, onBytes, optional = false) {
+  const u8 = await bytes(name, { onBytes, optional });
+  if (!u8) return null;
+  const blob = new Blob([u8], { type: 'image/png' });
   if (typeof createImageBitmap === 'function') {
     try { return await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }); } catch { /* 옵션 미지원 */ }
     try { return await createImageBitmap(blob); } catch { /* Blob 미지원(구형 사파리) */ }
@@ -49,6 +51,9 @@ async function image(name, onBytes) {
     return img;
   } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
 }
+
+// 있으면 그림, 없으면(404·오프라인 HTML 에 안 들어 있음) null. 네트워크 오류는 예외.
+export const optionalImage = (name) => image(name, undefined, true);
 
 const utf8 = (u8) => new TextDecoder().decode(u8);
 // 장면: 공개 배포본에는 비압축 scene.json 이 같이 들어간다. 개발 폴더·오프라인 HTML 에는 gz 만 있다.
@@ -114,7 +119,8 @@ export async function loadAssets(onProgress = () => {}, { res = pickResolution()
   };
   const onBytes = (k) => (got, total) => { if (total) { frac[k] = Math.min(0.98, got / total); report(); } };
   const done = (k) => { frac[k] = 1; report(); };
-  const out = { res };
+  // tiles: 절반 해상도 그림일 때 확대하면 원본 해상도 타일(redraw/tiles/)을 보이는 칸만 받아 쓴다. ?tiles=0 으로 끈다.
+  const out = { res, tiles: res === 1 && new URLSearchParams(location.search).get('tiles') !== '0' };
   await Promise.all([
     sceneJson(onBytes('scene')).then((s) => { out.scene = s; done('scene'); }),
     ...Object.keys(names).map((k) => image(names[k], onBytes(k)).then((im) => { out[k] = im; done(k); })),
