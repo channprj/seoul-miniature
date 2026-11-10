@@ -3,6 +3,7 @@
 // 구형 WebKit(트위터 인앱 브라우저의 오래된 iOS) 대비: 비압축 장면 우선 → gz(DecompressionStream → JS gunzip),
 // createImageBitmap 옵션을 못 받으면 옵션 없이 → 그것도 없으면 <img>.
 import { gunzip } from './gunzip.js';
+import { decodePng } from './png.js';
 
 const BASE = 'assets/';   // 상대 경로: github.io 의 하위 경로에서도 동작
 const emb = () => globalThis.__ISO_ASSETS__;
@@ -50,6 +51,17 @@ async function image(name, onBytes, optional = false) {
     if (img.decode) await img.decode(); else await new Promise((ok, no) => { img.onload = ok; img.onerror = no; });
     return img;
   } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
+}
+
+// 수치 맵(깊이·클래스): 브라우저 디코더를 거치지 않고 바이트를 직접 푼다(png.js 머리말: 사파리가 회색조 값을 바꾼다).
+// → ImageData(없으면 같은 모양의 객체). 못 풀면 예전처럼 브라우저 디코더로.
+async function dataMap(name, onBytes) {
+  const u8 = await bytes(name, { onBytes });
+  try {
+    const m = await decodePng(u8);
+    return typeof ImageData === 'function' ? new ImageData(m.data, m.width, m.height) : m;
+  } catch (e) { console.warn(`${name}: 직접 디코드 실패, 브라우저 디코더로 읽습니다`, e); }
+  return image(name);
 }
 
 // 있으면 그림, 없으면(404·오프라인 HTML 에 안 들어 있음) null. 네트워크 오류는 예외.
@@ -153,7 +165,7 @@ export async function loadAssets(onProgress = () => {}, { res = pickResolution()
   const out = { res, tiles: man, phone: isPhone() };
   await Promise.all([
     sceneJson(onBytes('scene')).then((s) => { out.scene = s; done('scene'); }),
-    ...Object.keys(names).map((k) => image(names[k], onBytes(k)).then((im) => { out[k] = im; done(k); })),
+    ...Object.keys(names).map((k) => (k === 'bg' ? image : dataMap)(names[k], onBytes(k)).then((im) => { out[k] = im; done(k); })),
   ]);
   return out;
 }

@@ -18,7 +18,8 @@ const TAU = Math.PI * 2;
 export const BUB = { DOTS: 1, NOTE: 2, BANG: 3, HEART: 4, SMILE: 5 };
 export const CEREMONY_HOURS = [10, 14];   // 수문장 교대 의식 시작 시각(실제 행사와 같은 10시·14시)
 export const PAL_OPEN = [9, 18];           // 궁궐 관람 시간(시). 이 밖에는 궁 안 방문객·안내원·궁 안 장면이 없다.
-export const CEREMONY_WINDOW = 0.5;       // 이 시간(시) 안에 시각이 들어오면 시작한다. 진행·종료는 시뮬레이션 초로.
+export const CEREMONY_WINDOW = 0.5;
+export const RUN_GROUPS = 44;             // 궁 둘레 러너 무리 수(혼자 62 %, 2~5명 크루 38 %). 아침·저녁에 전부, 낮에는 45 %.
 const BIT = { PAVE: 1, GRASS: 2, DIRT: 4 };
 const fr = (v) => v - Math.floor(v);
 const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -45,6 +46,10 @@ export function addCast(scene) {
       ['#dfe7f2', '#3d3d48', '#1e1a18'], ['#6a7388', '#2b2f3a', '#141210'], ['#c9b48e', '#2b2f3a', '#3b2f2a'], ['#f1f1f1', '#1f1f26', '#2b2320']]),
     student: add([['#f4f4f4', '#27365c', '#141210'], ['#f4f4f4', '#4a4e5a', '#1e1a18'], ['#27365c', '#4a4e5a', '#141210'], ['#9aa7c4', '#27365c', '#1e1a18'], ['#e8e2c8', '#5a3a3a', '#141210']]),
     hiker: add([['#e03a2e', '#1f1f26', '#141210'], ['#ff7a1a', '#2b2f3a', '#1e1a18'], ['#12a6a0', '#1f1f26', '#c9c9c9'], ['#c81e78', '#2b2f3a', '#141210'], ['#7ac51e', '#1f1f26', '#b8b8b8'], ['#2a6ae0', '#2b2f3a', '#2b2320']]),
+    // 러너: 형광·검정 운동복 / 겨울용 긴 옷(어두운 색)
+    runner: add([['#d7ff3a', '#1f1f26', '#141210'], ['#ff4fa3', '#1f1f26', '#1e1a18'], ['#19e0c8', '#2b2f3a', '#141210'], ['#1f1f26', '#1f1f26', '#2b2320'], ['#ff7a1a', '#1f1f26', '#141210'],
+      ['#f4f4f4', '#2a6ae0', '#1e1a18'], ['#2b2f3a', '#c8ff3a', '#141210'], ['#7a5cff', '#1f1f26', '#3b2f2a'], ['#ff3b30', '#2b2f3a', '#141210'], ['#1f1f26', '#ff4fa3', '#1e1a18']]),
+    runnerW: add([['#2b2f3a', '#1f1f26', '#141210'], ['#3a4a6a', '#1f1f26', '#1e1a18'], ['#5a2a3a', '#1f1f26', '#141210'], ['#1f1f26', '#1f1f26', '#2b2320'], ['#4a5a2a', '#1f1f26', '#141210']]),
     cleaner: add([['#c8e03a', '#4a5a2a', '#1e1a18'], ['#c8e03a', '#3d3d48', '#141210']]),
     staff: add([['#3f6a5a', '#2b2f3a', '#141210'], ['#3f6a5a', '#3d3d48', '#1e1a18']]),
     guide: add([['#ffd23f', '#3b4a66', '#3b2f2a'], ['#ff7a3d', '#2b2f3a', '#1e1a18']]),
@@ -800,11 +805,197 @@ export function createPeople(scene, grid, opts = {}) {
   };
 
   // ── 배치(고정 시드). 순서가 곧 자리 우선순위.
+
+  // ── 광화문 앞 해치 한 쌍(고정 소품). 그림 타일에는 없어서 스프라이트로 세운다.
+  // 좌표 근거: 광화문 정면 가운데의 지면 = 지도 px (783, 1218)(세 홍예 가운데 아래, 화면에서 읽은 값). 월드 축은 +x 가 문의 가로(동쪽), −y 가 남쪽(세종대로 쪽).
+  // 실제 해치는 월대 남쪽 끝 좌우에 남쪽을 보고 앉아 있다 → 정면에서 남쪽으로 24 m, 좌우로 14 m 를 목표로 하고,
+  // 둘이 대칭을 유지한 채 가장 가까운 「보도·광장(클래스 11·1) + 걷는 경로에서 1.8 m 이상 + 예약 자리와 안 겹침」 자리를 클래스 맵으로 찾는다.
+  const haechi = [];
+  {
+    const G0 = toWorld(783, 1218, [0, 0]);
+    const paths = [];   // 근처를 지나는 걷는 경로의 점(1 m 간격)
+    for (const w of walkers) for (let d = 0; d <= w.L; d += 1) { pointAt(w.pts, w.cum, d, P3); if (Math.abs(P3[0] - G0[0]) < 40 && Math.abs(P3[1] - G0[1] + 24) < 30) paths.push(P3[0], P3[1]); }
+    const okSpot = (x, y) => {
+      for (const [dx, dy] of [[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]]) { const c = clsAt(x + dx, y + dy); if (c !== 11 && c !== 1) return false; }
+      if (!free(x, y, 2.2)) return false;
+      for (let k = 0; k < paths.length; k += 2) if (Math.hypot(paths[k] - x, paths[k + 1] - y) < 1.8) return false;
+      return true;
+    };
+    let best = null, bd = 1e9;
+    for (let lat = 9; lat <= 20; lat += 0.5) for (let dep = 14; dep <= 36; dep += 0.5) {
+      const d = Math.hypot(lat - 14, dep - 24);
+      if (d >= bd || !okSpot(G0[0] - lat, G0[1] - dep) || !okSpot(G0[0] + lat, G0[1] - dep)) continue;
+      bd = d; best = [lat, dep];
+    }
+    if (best) for (const sd of [-1, 1]) {
+      const x = G0[0] + sd * best[0], y = G0[1] - best[1];
+      haechi.push({ x, y, side: sd });
+      props.push({ type: 'haechi', x, y, variant: 0 });
+      claim(x, y); for (let a = 0; a < 6; a++) claim(x + Math.cos(a * TAU / 6) * 1.2, y + Math.sin(a * TAU / 6) * 1.2);   // 사람이 서거나 지나가지 않는 자리
+    }
+  }
+
+  // ── 궁 둘레 러너: 담장 바깥 보도를 따라 달린다(담을 상자로 보고 바깥쪽으로 가장 가까운 보도 띠를 클래스 맵에서 찾아 잇는다).
+  // 차도(횡단보도 포함)는 건너지 않는다 → 보도가 끊기는 곳에서 구간이 나뉘고, 러너는 한 구간을 오간다.
+  const RUNB = BIT.PAVE | BIT.DIRT;
+  const runChains = [];
+  {
+    // 궁은 차도로 둘러싸여 있고, 그 차도 안쪽 가장자리에 담길(보도, 클래스 1·11)이 가는 띠로 붙어 있다.
+    // 궁 한가운데에서 사방으로 선을 쏘아 처음 만나는 차도를 찾고, 거기서 1.5~9 m 안쪽으로 물러나 보도 칸을 고른다 → 각도 순서대로 이으면 담길 한 바퀴.
+    // 건물에 가려 차도가 안 보이는 방향은 엉뚱하게 먼 차도를 만나므로(반지름이 튄다) 그 자리에서 구간을 끊는다.
+    const [X0, Y0, X1, Y1] = PALACE, cx = (X0 + X1) / 2, cy = (Y0 + Y1) / 2, N = 900;
+    // 담길은 폭 2~4 m 라 3×3 칸(okPoint)까지는 요구하지 않는다. 그 칸과 좌우 0.5 m 가 보도이면 된다.
+    const okRun = (x, y) => { const c = clsAt(x, y); return (c === 11 || c === 1) && !!(cellAt(x, y) & RUNB); };
+    const ray = [];
+    for (let k = 0; k < N; k++) {
+      const a = k * TAU / N, ux = Math.cos(a), uy = Math.sin(a);
+      let hit = null;
+      for (let r = 120; r < 640 && !hit; r += 0.5) {
+        const x = cx + ux * r, y = cy + uy * r;
+        if (x < X0 - 70 || x > X1 + 70 || y < Y0 - 80 || y > Y1 + 70) break;
+        if (clsAt(x, y) !== 2) continue;
+        for (let b = 1.5; b <= 9; b += 0.5) if (okRun(cx + ux * (r - b), cy + uy * (r - b))) { const rr2 = okRun(cx + ux * (r - b - 1), cy + uy * (r - b - 1)) ? r - b - 1 : r - b; hit = [cx + ux * rr2, cy + uy * rr2, 0, rr2]; break; }
+        if (!hit) break;
+      }
+      ray.push(hit);
+    }
+    let cur = null;
+    // 이웃한 점끼리 잇는다. 사이(0.12 m 간격)가 모두 보도(클래스 1·11)일 때만 — 차도·건물·궁 안 마당을 지나면 거기서 구간을 끊는다.
+    const okSeg = (q, p) => { const n = Math.max(1, Math.ceil(Math.hypot(p[0] - q[0], p[1] - q[1]) / 0.12)); for (let k = 1; k < n; k++) { const c = clsAt(q[0] + (p[0] - q[0]) * k / n, q[1] + (p[1] - q[1]) * k / n); if (c !== 1 && c !== 11) return false; } return true; };
+    // 선을 쏘아 얻은 점은 들쭉날쭉하다 → 이웃과 평균 내어 펴되, 편 자리와 양옆 선분이 보도일 때만 받아들인다(세 번 반복)
+    const smooth = (pts) => { for (let pass = 0; pass < 3; pass++) for (let i = 1; i < pts.length - 1; i++) { const a = pts[i - 1], b = pts[i], c = pts[i + 1], m = [(a[0] + 2 * b[0] + c[0]) / 4, (a[1] + 2 * b[1] + c[1]) / 4, 0, b[3]]; if (okRun(m[0], m[1]) && okSeg(a, m) && okSeg(m, c)) pts[i] = m; } return pts; };
+    const flush = () => { if (cur && cur.length >= 2) { smooth(cur); const cum = cumLengths(cur); if (cum[cum.length - 1] >= 60) runChains.push({ pts: cur, cum, L: cum[cum.length - 1] }); } cur = null; };
+    let start = 0;
+    for (let k = 0; k < N; k++) { const p = ray[k], q = ray[(k + N - 1) % N]; if (p && (!q || Math.hypot(p[0] - q[0], p[1] - q[1]) > 20 || !okSeg(q, p))) { start = k; break; } }
+    for (let n = 0; n < N; n++) {
+      const p = ray[(start + n) % N];
+      if (!p) continue;
+      if (cur) { const q = cur[cur.length - 1]; if (Math.hypot(p[0] - q[0], p[1] - q[1]) > 20 || !okSeg(q, p)) flush(); }
+      (cur ||= []).push(p);
+    }
+    flush();
+    // 구간 잇기: 이웃한 두 구간의 끝이 보도로 이어지면 한 구간으로 합친다 → 러너가 짧은 구간에서 자꾸 되돌지 않고 길게 달린다.
+    // 클래스 맵은 화면 공간이라 가로수 수관(10)이 담길을 가린 곳에서 구간이 끊겨 있다. 잇는 길은 보도(1·11)와 수관에 가린 곳(10)만 지난다.
+    // 차도(2, 진입로·횡단보도 포함)·잔디·건물·궁 안은 지나지 않는다 → 차도가 가로지르는 곳에서는 여전히 끊긴다.
+    // 곧게 이을 수 없으면 1 m 격자에서 가장 짧은 보도 길을 찾는다(곧은 거리의 1.8배 + 20 m 까지). 해치 둘레 3 m 는 피한다.
+    // 광화문 정면은 잇지 않는다: 서쪽 담길에서 광장으로 가는 보도는 문 바로 앞(수문장 자리)뿐이라 러너가 의식 한가운데를 가로지르게 된다.
+    const hy = haechi.length ? haechi[0].y - 3 : -1e9, hx = haechi.length ? (haechi[0].x + haechi[1].x) / 2 : 0;   // 해치보다 문 쪽(월대·수문장 자리)으로는 달리지 않는다
+    const passC = (x, y) => { const c = clsAt(x, y); return (c === 1 || c === 11 || c === 10) && !inPalace(x, y) && !(y > hy && Math.abs(x - hx) < 45 && y < PALACE[1] + 5); };
+    const okLink = (q, p) => { const n = Math.max(1, Math.ceil(Math.hypot(p[0] - q[0], p[1] - q[1]) / 0.12)); for (let k = 0; k <= n; k++) { const x = q[0] + (p[0] - q[0]) * k / n, y = q[1] + (p[1] - q[1]) * k / n; if (!passC(x, y)) return false; for (const h of haechi) if (Math.hypot(x - h.x, y - h.y) < 3) return false; } return true; };
+    const link = (a, b) => {
+      const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (d > 100) return null;
+      if (okLink(a, b)) return [];
+      for (const cl of [0.7, 0.35, 0]) { const r = route(a, b, d, cl); if (r) return r; }
+      return null;
+    };
+    const route = (a, b, d, cl) => {
+      const M = 60, gx0 = Math.min(a[0], b[0]) - M, gy0 = Math.min(a[1], b[1]) - M, gw = Math.ceil(Math.abs(a[0] - b[0]) + 2 * M) + 1, gh = Math.ceil(Math.abs(a[1] - b[1]) + 2 * M) + 1;
+      const idx = (p) => Math.round(p[1] - gy0) * gw + Math.round(p[0] - gx0), si = idx(a), gi = idx(b);
+      const open = (i) => { const x = gx0 + (i % gw), y = gy0 + Math.floor(i / gw); if (i === si || i === gi) return true; for (const [dx, dy] of [[0, 0], [cl, 0], [-cl, 0], [0, cl], [0, -cl]]) if (!passC(x + dx, y + dy)) return false; for (const h of haechi) if (Math.hypot(x - h.x, y - h.y) < 3.5) return false; return true; };
+      const from = new Int32Array(gw * gh).fill(-1), q = [si]; from[si] = si;
+      for (let qi = 0; qi < q.length && from[gi] < 0; qi++) {
+        const i = q[qi], x = i % gw, y = Math.floor(i / gw);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue; const j = ny * gw + nx; if (from[j] >= 0 || !open(j)) continue; from[j] = i; q.push(j); }
+      }
+      if (from[gi] < 0) return null;
+      const cells = []; for (let i = from[gi]; i !== si; i = from[i]) cells.push([gx0 + (i % gw), gy0 + Math.floor(i / gw), 0, 0]);
+      cells.reverse();
+      // 격자 길을 편다: 지금 점에서 곧게 갈 수 있는 가장 먼 점으로 건너뛴다
+      const all = [a, ...cells, b], out = [];
+      for (let i = 0; i < all.length - 1;) { let j = all.length - 1; while (j > i + 1 && !okLink(all[i], all[j])) j--; if (j === i + 1 && !okLink(all[i], all[j])) return null; if (j < all.length - 1) out.push(all[j]); i = j; }
+      let len = 0; { let p = a; for (const c of [...out, b]) { len += Math.hypot(c[0] - p[0], c[1] - p[1]); p = c; } }
+      return len <= d * 1.8 + 20 ? out : null;
+    };
+    if (runChains.length > 1) {
+      const src = runChains.splice(0), groups = [];
+      let g = src[0].pts.slice();
+      for (let i = 0; i < src.length; i++) {
+        const nx = src[(i + 1) % src.length], mid = link(g[g.length - 1], nx.pts[0]);
+        if (i + 1 < src.length) { if (mid) g = g.concat(mid, nx.pts); else { groups.push(g); g = nx.pts.slice(); } }
+        else if (mid && groups.length) groups[0] = g.concat(mid, groups[0]);   // 마지막 구간이 첫 구간으로 이어진다
+        else groups.push(g);
+      }
+      for (const pts of groups) { const cum = cumLengths(pts); runChains.push({ pts, cum, L: cum[cum.length - 1] }); }
+    }
+  }
+  // 러너 무리: 혼자 또는 2~5명이 한 줄(러닝 크루). u = 구간 위를 접지 않고 잰 거리(왕복), lat = 옆으로 비킨 거리.
+  const runners = [];
+  {
+    const RL = (h) => LK('a', cast.runner[Math.floor(h * cast.runner.length)], fr(h * 17), { noUmb: true, runner: true, palW: cast.runnerW[Math.floor(fr(h * 5) * cast.runnerW.length)], hat: fr(h * 3) < 0.25 ? 1 + Math.floor(fr(h * 29) * 5) : 0 });
+    const total = runChains.reduce((a, c) => a + c.L, 0);
+    let id = 0;
+    for (const c of runChains) {
+      const n = Math.max(1, Math.round(RUN_GROUPS * c.L / total));
+      for (let k = 0; k < n; k++, id++) {
+        const h = hash01(id * 53 + 7), crew = hash01(id * 59 + 3) < 0.38 ? 1 + Math.floor(hash01(id * 61 + 11) * 4) : 0;   // 뒤따르는 사람 수 0 또는 1~4
+        const fol = Array.from({ length: crew }, (_, j) => ({ dd: -(j + 1) * 1.7, look: RL(hash01(id * 67 + j * 13 + 1)) }));
+        runners.push({ id, c, u: h * 2 * c.L, ou: 0, v: 2.9 + 0.9 * hash01(id * 71 + 5) - (crew ? 0.25 : 0), cv: 3, lat: 0, olat: 0, latT: 0, hold: 0, look: RL(hash01(id * 73 + 9)), fol, key: crew ? 0.06 + 0.94 * hash01(id * 79 + 2) : hash01(id * 79 + 2),   // 크루는 한밤(비율 0.03)에는 나오지 않는다
+          vis: true, face: 1 });
+      }
+    }
+    for (const r of runners) r.ou = r.u;
+  }
+  // 러너 근처에 올 수 있는 걷는 사람(경로가 러너 구간 6 m 안을 지나는 사람)만 비켜 가기 검사에 쓴다
+  const runNear = [];
+  {
+    const cells = new Set(), key = (x, y) => Math.floor(x / 6) * 100003 + Math.floor(y / 6);
+    for (const c of runChains) for (let d = 0; d <= c.L; d += 3) { pointAt(c.pts, c.cum, d, P3); for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) cells.add(key(P3[0] + i * 6, P3[1] + j * 6)); }
+    walkers.forEach((w, i) => { for (let d = 0; d <= w.L; d += 3) { pointAt(w.pts, w.cum, d, P3); if (cells.has(key(P3[0], P3[1]))) { runNear.push(i); return; } } });
+  }
+  const rfold = (c, u) => { let d = u % (2 * c.L); if (d < 0) d += 2 * c.L; return d > c.L ? 2 * c.L - d : d; };
+  const rdir = (c, u) => { let d = u % (2 * c.L); if (d < 0) d += 2 * c.L; return d > c.L ? -1 : 1; };
+  const RT = [0, 0, 0], RN = [0, 0, 0];
+  // 러너(또는 dd 만큼 뒤의 동행)의 자리. al = 보간(0 이전 스텝 … 1 지금). 돌려주는 값 = 화면에서 오른쪽(+1)·왼쪽(−1)을 보는지.
+  const rpos = (r, al, out, dd = 0) => {
+    const c = r.c, u = r.ou + (r.u - r.ou) * al + dd, d = rfold(c, u), dir = rdir(c, u), lat = r.olat + (r.lat - r.olat) * al;
+    pointAt(c.pts, c.cum, d, out);
+    pointAt(c.pts, c.cum, Math.min(c.L, d + 2), RT); pointAt(c.pts, c.cum, Math.max(0, d - 2), RN);
+    let tx = RT[0] - RN[0], ty = RT[1] - RN[1]; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;   // 구간의 앞 방향(달리는 방향과 무관 → 반환점에서 옆자리가 튀지 않는다)
+    // 옆으로 비킨 자리가 보도가 아니면(담길이 좁은 곳) 절반만, 그래도 아니면 가운데 줄로
+    if (lat) { const bx = out[0], by = out[1]; for (const k of [1, 0.5, 0]) { out[0] = bx - ty * lat * k; out[1] = by + tx * lat * k; if (!k) break; const c = clsAt(out[0], out[1]); if (c === 1 || c === 11) break; } }
+    RT[0] = tx * dir; RT[1] = ty * dir; RT[2] = dir;   // 달리는 방향과 부호(호출한 쪽이 바로 읽는다)
+    return RT[0] * ex[0] + RT[1] * ex[1] >= 0 ? 1 : -1;
+  };
+  const RP = [0, 0, 0];
+  const runFrac = (t) => ((t >= 6 && t < 9) || (t >= 18 && t < 21) ? 1 : t >= 9 && t < 18 ? 0.45 : t >= 21 && t < 23.5 ? 0.22 : t >= 5 && t < 6 ? 0.3 : 0.03);
+  const wantR = (r) => r.key < runFrac(E.tod) * (E.rain ? 0.3 : 1) * (E.season === 3 ? 0.65 : 1);
+  const stepRunners = (dt, first) => {
+    for (const r of runners) {
+      r.ou = r.u; r.olat = r.lat;
+      const want = wantR(r);
+      if (want !== r.vis) { rpos(r, 1, RP); proj.project(RP[0], RP[1], 0, S); if (first || !inView(S[0], S[1], 40)) r.vis = want; }
+      if ((stepN + r.id) % 3 === 0) {
+        // 앞 3 m 안에 사람이 있으면 옆으로 비키고, 비킬 자리가 보도가 아니면 속도를 줄인다
+        r.face = rpos(r, 1, RP);
+        const tx = RT[0], ty = RT[1], dn = RT[2], nx = -ty * dn, ny = tx * dn;   // (nx, ny) = 구간 기준 옆 방향(lat 의 + 쪽)
+        let side = 0, slow = false;
+        const see = (x, y) => { const ax = (x - RP[0]) * tx + (y - RP[1]) * ty; if (ax < 0.3 || ax > 3.2) return; const lx = (x - RP[0]) * nx + (y - RP[1]) * ny; if (Math.abs(lx) < 0.8) side = lx >= 0 ? -1 : 1; };
+        for (const i of runNear) if (walkers[i].vis && !walkers[i].run) see(posW[i * 2], posW[i * 2 + 1]);
+        for (const g of guests) { see(g.x, g.y); for (const f of g.fol) see(f.x, f.y); }
+        // 서 있는 사람·장면 자리(예약된 자리)가 앞길에 있으면 비킨다
+        if (!side) for (const ah of [1.2, 2.4]) { const bx = RP[0] + tx * ah, by = RP[1] + ty * ah; if (!free(bx, by, 0.8)) { side = free(bx - nx, by - ny, 0.8) ? -1 : 1; break; } }
+        for (const o of runners) if (o !== r && o.vis && o.c === r.c && Math.abs(rfold(o.c, o.u) - rfold(r.c, r.u)) < 3.4 && rdir(o.c, o.u) === dn && o.cv < r.cv) { rpos(o, 1, P3); see(P3[0], P3[1]); }
+        const lane = dn * 0.45;   // 오가는 러너끼리는 서로 다른 쪽으로 달린다
+        let tgt = lane;
+        if (side) { tgt = Math.max(-1.4, Math.min(1.4, r.lat + side * 0.95)); const x = RP[0] + (tgt - r.lat) * nx, y = RP[1] + (tgt - r.lat) * ny, c = clsAt(x, y); if ((c !== 1 && c !== 11) || !free(x, y, 0.9)) { tgt = r.lat; slow = true; } }
+        // 담길이 좁은 곳: 무리의 맨 뒤부터 4.6 m 앞까지 그 옆줄이 보도가 아니면 가운데 줄로 모인다
+        if (tgt) { const cx0 = RP[0] - r.lat * nx, cy0 = RP[1] - r.lat * ny; for (let ah = -1.7 * r.fol.length - 1; ah <= 4.6; ah += 0.8) { const c = clsAt(cx0 + tx * ah + tgt * nx, cy0 + ty * ah + tgt * ny); if (c !== 1 && c !== 11) { tgt = 0; if (side) slow = true; break; } } }
+        if (side) r.hold = 30; else if (r.hold > 0) { r.hold -= 3; tgt = r.latT; }   // 비킨 줄을 1초쯤 지킨다(좌우로 떨지 않게)
+        r.latT = tgt; r.slow = slow;
+      }
+      r.lat += Math.max(-1.1 * dt, Math.min(1.1 * dt, (r.latT - r.lat) * Math.min(1, dt * 3)));   // 옆걸음은 초속 1.1 m 까지
+      r.cv += ((r.slow ? r.v * 0.5 : r.v) - r.cv) * Math.min(1, dt * 3);
+      r.u += r.cv * dt;
+    }
+  };
   const ceremony = mkCeremony();
   if (opts.birds) { let n = 0; for (const f of opts.birds.flocks) { if (n >= 5) break; if (mkPigeon(f)) n++; } }
   for (const [c, r0, r1, n] of [[A.gate, 14, 55, 3], [A.geun, 14, 50, 2], [A.gyeong, 18, 60, 2], [A.hyang, 8, 50, 2]]) for (let k = 0; k < n; k++) mkPhoto(c, r0, r1, k === 0);
   for (let k = 0; k < 3; k++) mkPhoto(null, 0, 0, false);
   // 광화문 앞(담 밖) 넷: 밤에도 남아 야경을 찍는다
+  // 해치 앞 사진 명소: 석상마다 둘(석상 남쪽 앞)
+  for (const h of haechi) for (let k = 0; k < 2; k++) { const sc = mkPhoto([h.x, h.y - 5], 1.5, 7, k === 0, false, true); if (sc) { sc.nightKey = rnd() * 0.4; sc.haechi = true; } }
   for (let k = 0; k < 4; k++) { const sc = mkPhoto([A.gate[0], PALACE[1] - 30], 4, 60, false, false, true); if (sc) sc.nightKey = rnd() * 0.25; }
   // 나란히 걷는 일행은 화면 가로 방향(±20°)으로 늘어선다 → 서로 가리지 않는다
   const sideAng = () => Math.atan2(ex[1], ex[0]) + rr(-0.35, 0.35) + (rnd() < 0.5 ? Math.PI : 0);
@@ -985,6 +1176,7 @@ export function createPeople(scene, grid, opts = {}) {
 
   let stepN = 0;
   const sys = {
+    haechi, runners, runChains, rpos, runFrac, toPx: (x, y) => { proj.project(x, y, 0, S); return [S[0], S[1]]; },
     time: 0, rainT: 0, actors, guests, scenes, props, fx, floaters, walkers, standing, ov, stats, wpos, toWorld, env: E, ceremony, cast, clsAt, hidden, inPalace, pairCount: pairs.length / 2,
     wdir: (i) => walkers[i].dir,
     step(dt, env = {}) {
@@ -1003,6 +1195,7 @@ export function createPeople(scene, grid, opts = {}) {
         if (want !== sc.on && (stepN === 1 || canFlip(sc))) setOn(sc, want);
         if (sc.on) sc.step(dt);
       }
+      stepRunners(dt, stepN === 1);
       for (const a of actors) if (a.on) stepActor(a, dt);
       for (const g of guests) stepActor(g, dt);
       for (let k = folFx.length - 1; k >= 0; k--) { const e = folFx[k]; if (e.f.hop > 0) e.f.hop = Math.max(0, e.f.hop - dt); if ((e.t -= dt) <= 0) { e.f.bub = 0; e.f.hop = 0; folFx.splice(k, 1); } }
@@ -1055,6 +1248,7 @@ export function createPeople(scene, grid, opts = {}) {
         const k = SPOT[sc.kind](sc);
         if (k && !out.includes(k)) out.push(k);
       }
+      for (const h of haechi) if (inV(h.x, h.y) && !out.includes('haechi')) out.push('haechi');
       for (const mt of meets) { const k = mt.kind === 'kiddog' ? 'dogmeet' : mt.kind; if ((k === 'dogmeet' || k === 'askphoto') && inV(mt.a.x, mt.a.y) && !out.includes(k)) out.push(k); }
       return out;
     },
@@ -1101,7 +1295,7 @@ export function createPeople(scene, grid, opts = {}) {
     findType(type, zone) { const out = []; walkers.forEach((w, i) => { if (w.type === type && w.vis && (!zone || w.zone === zone)) { wpos(i, sys.time, P3); if (!hidden(P3[0], P3[1])) { proj.project(P3[0], P3[1], 0, S); out.push({ x: S[0], y: S[1], wi: i }); } } }); return out; },
     meets,
     snapshot() {
-      return { time: sys.time, stats: { ...stats }, rs: R1.rs, off: Array.from(ov.off), vis: walkers.map((w) => (w.vis ? 1 : 0)).join(''), actors: actors.map((a) => [a.on ? 1 : 0, a.x, a.y, a.pose, a.bubble]), guests: guests.map((g) => [g.wi, g.x, g.y, g.bubble]), scenes: scenes.map((s) => [s.on ? 1 : 0, s.st]) };
+      return { runners: runners.map((r) => [r.vis ? 1 : 0, r.u, r.lat, r.hold]), time: sys.time, stats: { ...stats }, rs: R1.rs, off: Array.from(ov.off), vis: walkers.map((w) => (w.vis ? 1 : 0)).join(''), actors: actors.map((a) => [a.on ? 1 : 0, a.x, a.y, a.pose, a.bubble]), guests: guests.map((g) => [g.wi, g.x, g.y, g.bubble]), scenes: scenes.map((s) => [s.on ? 1 : 0, s.st]) };
     },
   };
   return sys;

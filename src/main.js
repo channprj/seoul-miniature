@@ -28,6 +28,7 @@ const mix3 = (a, b, t) => [0, 1, 2].map((i) => lerp(a[i], b[i], t));
 const hex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 // 이미지 픽셀을 JS 로 읽는다(클래스·깊이 맵은 색 변환 없는 PNG 라 값이 그대로 나온다)
 function readPixels(bmp) {
+  if (bmp.data) return bmp.data;   // 직접 디코드한 수치 맵(assets.js dataMap): 이미 RGBA 바이트
   const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
   const g = c.getContext('2d', { willReadFrequently: true });
   g.drawImage(bmp, 0, 0);
@@ -497,7 +498,7 @@ async function boot() {
   // ── 캡처·테스트용 수동 시계: __iso.manual(true) 후 __iso.step(dt) 로 한 프레임씩 결정론적으로 진행
   window.__iso = {
     finds,
-    state, cam, traffic, env, R,
+    state, cam, traffic, env, R, proj,
     manual(on) { state.manual = on; last = performance.now(); },
     step(dt) { advance(dt); draw(); },
     startTour, stopTour, setSeason,

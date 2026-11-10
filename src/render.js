@@ -62,6 +62,8 @@ uniform vec4 uSeason;   // 봄, 여름, 가을, 겨울 가중치
 uniform float uTime, uDay, uRain;
 uniform sampler2D uTiles, uTileIdx;   // 배경 타일 아틀라스와 이 단계의 칸 색인(bgtiles.js)
 uniform float uTileOn;                // 1 = 타일 경로(uBg 는 z1 바탕, 그림 단계 = uF)
+uniform sampler2D uSurf;              // z4·z8 표면 버퍼(FS_SURF): r 윗면, g 평지, b 둘레 윗면 비율. 지도 px 해상도, 창 영역만
+uniform vec2 uSurfOrg;                // 표면 버퍼 (0,0) 의 지도 px
 out vec4 o;
 // 이 단계(uF 그림 px / 지도 px) 그림 좌표 b: 올라온 타일이면 아틀라스, 아니면 바탕(빠르게 끌 때 가장자리 한두 칸만)
 vec3 tileRead(ivec2 b){
@@ -100,13 +102,6 @@ int refineSem(ivec2 p, int sem, vec3 c){
   }
   return v;
 }
-// 겨울 눈 덮임(지도 px 단위: 벽·도로·높이 잡음은 0.5 m 맵에서 온다)
-float snowCover(ivec2 q){
-  float d = bgDepth(q);
-  if (d > 1.0e8) return 0.0;
-  float road = semAt(q) == 2 ? 1.0 : 0.0;
-  return (1.0 - wallness(q)) * (0.62 + 0.38 * vnoise(worldOf(q, d).xy * 0.35)) * (1.0 - road * 0.82);
-}
 // 배경은 0.25 m/px(지도 px 의 2배). 1배 합성일 때는 mip 1(2×2 평균)을 읽는다.
 // off = 그림 픽셀 단위 가로 이동(나뭇잎·물결). 1배 합성에서는 옮긴 2×2 를 직접 평균한다.
 vec3 bgRead(ivec2 p, ivec2 fp, int off){
@@ -140,10 +135,46 @@ void main(){
   // 옮기는 양은 이 단계 텍셀 정수배: z2·z4 1 텍셀(25·12.5 cm), z8 2 텍셀(12.5 cm)
   ivec2 ac = apm > 2 ? a * 2 / apm : a;
   int ok = apm > 4 ? 2 : 1;
-  float z = heightOf(p, d);
   vec3 wp = worldOf(p, d);
+  vec3 c = bgRead(p, fp, 0);
+  // z4·z8 칸 스냅: 깊이·클래스 맵은 0.5 m 칸인데 그림의 경계는 그 사이를 지난다. 텍셀마다 둘러싼 네 칸 중 "제 칸"을 고른다.
+  //   칸의 무게 = 가까운 정도(선형 보간 무게) × 그 칸의 바탕(z1) 색이 이 텍셀 색과 비슷한 정도.
+  //   먼저 클래스별로 무게를 더해 가장 무거운 클래스를 고르고(다수결), 그 클래스의 칸 중 가장 무거운 칸을 제 칸으로 삼는다.
+  //   → 색이 갈리는 경계(벽·지붕·바닥)에서는 칸 경계가 그림의 선을 따라가고, 색이 같은 곳에서는 0.5 m 계단 대신 비스듬한 매끈한 선이 된다.
+  // 고른 칸은 알파에 적어 조명 패스가 같은 칸을 읽게 한다(0 = 제자리).
+  // 표면 값(윗면·평지)도 같은 무게로 섞어 반에서 끊는다. 값 자체는 표면 버퍼가 낱알을 걸러 둔 것(FS_SURF) → 0.5 m 낱알이 덩어리로 남지 않는다.
+  ivec2 q = p; int snapE = 0;
+  float upW = 0.0, flatW = 0.0, upR = 0.0;   // 윗면(눈이 얹히는 면), 평지(그림자를 받는 땅), 둘레 윗면 비율
+  if (apm > 2) {
+    vec4 sw; ivec2 si0; vec4 sfr, sfg, sfb;
+    vec2 t = fc / uF - 0.5; si0 = ivec2(floor(t)); vec2 f = t - vec2(si0);
+    ivec4 ss;
+    for (int k = 0; k < 4; k++) {
+      ivec2 o2 = ivec2(k & 1, k >> 1), cq = clamp(si0 + o2, ivec2(0), ivec2(MAPSZ) - 1);
+      vec3 dc = c - texelFetch(uBg, cq, 0).rgb;
+      sw[k] = ((o2.x == 1 ? f.x : 1.0 - f.x) * (o2.y == 1 ? f.y : 1.0 - f.y) + 0.02) / (0.004 + dot(dc, dc));
+      ss[k] = semAt(cq);
+      vec3 sf = texelFetch(uSurf, clamp(cq - ivec2(uSurfOrg), ivec2(0), textureSize(uSurf, 0) - 1), 0).rgb;
+      sfr[k] = sf.r; sfg[k] = sf.g; sfb[k] = sf.b;
+    }
+    sw /= sw.x + sw.y + sw.z + sw.w;
+    upW = dot(sw, sfr); flatW = dot(sw, sfg); upR = dot(sw, sfb);
+    int bk = 0; float bt = -1.0;
+    for (int k = 0; k < 4; k++) {
+      float tot = dot(sw, vec4(equal(ss, ivec4(ss[k])))) + sw[k] * 0.01;
+      if (tot > bt) { bt = tot; bk = k; }
+    }
+    ivec2 cq = clamp(si0 + ivec2(bk & 1, bk >> 1), ivec2(0), ivec2(MAPSZ) - 1);
+    if (bgDepth(cq) < 1.0e8) q = cq;
+    ivec2 dq2 = q - p;
+    // 알파: 아래 4 비트 = 고른 칸, 16 = 평지(그림자 받는 면), 32 = 배경 텍셀 표시(스프라이트는 0 을 쓴다)
+    // 수목 칸의 짙은 초록 텍셀(수관·낮은 생울타리)은 칸 높이가 땅이어도 평지가 아니다 → 수관 안에 0.5 m 그림자 조각이 얹히지 않는다
+    snapE = (dq2.x < 0 ? 2 : dq2.x) + 3 * (dq2.y < 0 ? 2 : dq2.y) + (flatW > 0.5 && !(isGreen(c) && dot(c, vec3(.3,.59,.11)) < 0.56 && ss[bk] == 10) ? 16 : 0) + 32;
+  }
+  float dq = bgDepth(q);
+  float zq = heightOf(q, dq);
   // 의미 클래스(밑그림에서 온 맵): 2 도로, 3 녹지, 4 수면, 5 궁궐 마당, 6/7 건물 지붕/벽, 8/9 궁궐 지붕/벽, 10 수목, 11 보행로
-  int sem = semAt(p);
+  int sem = semAt(q);
   int off = 0;
   if (sem == 10) {
     // 나뭇잎 흔들림: 수관을 4×3 그림 px 조각(벽돌 배치)으로 나눠 조각마다 1px(돌풍 때 가끔 2px) 가로로 옮긴다.
@@ -174,19 +205,35 @@ void main(){
     if (off != 0 && semAt((a + ivec2(off * ok, 0)) / apm) != 4) off = 0;
   }
   off *= ok;
-  vec3 c = bgRead(p, fp, 0);
   if (off != 0) {
     // 옮겨 온 텍셀과 제자리 텍셀이 둘 다 잎(초록)·물(파랑)일 때만 옮긴다 → 수목 칸에 걸친 지붕·벽·줄기는 안 흔들린다
     vec3 cs = bgRead(p, fp, off);
     if (sem == 10 ? isGreen(c) && isGreen(cs) : isBlue(c) && isBlue(cs)) c = cs; else off = 0;
   }
   float lum = dot(c, vec3(.3,.59,.11));
-  float wall = wallness(p);
-  int rs = refineSem(p, sem, c);
+  vec3 c0 = c;   // 계절 변환 전 그림 색
+  int rs = refineSem(q, sem, c);
   if (rs == 10) {
     // 잔디 위 나무 그늘은 그림에서 어두운 초록 점무늬이고 점 사이 색은 수관 하이라이트와 같은 색이라 색만으로는 못 가른다.
     // 클래스 맵도 그 자리를 수목으로 적어 둔 곳이 많다 → 깊이로 잰 높이가 땅(1 m 미만)이면 수관이 아니라 잔디 위 그늘이다.
-    if (heightOf(p, d) < 1.0) rs = 3;
+    if (zq < 1.0) rs = 3;
+  }
+  // z4·z8: 반대로 수목 칸의 밝은 초록이 땅보다 높으면 잔디가 아니라 수관의 밝은 면이다(깊은 단계 그림은 수관 하이라이트가 잔디만큼 밝다).
+  // 잔디로 두면 겨울에 눈도 맨가지 색도 안 입어 초록 조각으로 남는다.
+  else if (rs == 3 && sem == 10 && apm > 2 && zq >= 1.5) rs = 10;
+  // z4·z8: 클래스 맵에 없는 나무(그림을 다시 그리며 자리가 옮겨진 수관): 맨땅·마당·길 칸의 짙은 초록 텍셀은 수관으로 본다(건물 칸의 초록 칠은 제외).
+  else if (rs == 0 && apm > 2 && (sem == 1 || sem == 2 || sem == 5 || sem == 11) && isGreen(c) && lum < 0.40) rs = 10;
+  // z4·z8 수관 속(칸 평균이 초록인 수목 칸, 땅보다 높음)의 초록 아닌 텍셀: 잎 사이 검은 틈·그늘 얼룩은 여름 그림에서는 그대로 두고,
+  // 다른 계절에는 짙은 잎으로 보고 계절 색을 입힌다(단풍·벚꽃·눈 사이에 검은 얼룩으로 남지 않게).
+  bool inCanopy = false;
+  if (apm > 2 && rs == 0 && sem == 10 && zq >= 1.0 && uSeason.y < 0.99) {
+    vec3 cb = texelFetch(uBg, q, 0).rgb;
+    // 칸 평균이 초록이거나, 칸 전체가 검은 덩어리(무채색·아주 어두움: 푸른 기가 도는 기와는 아님)
+    inCanopy = isGreen(cb) || (max(cb.r, max(cb.g, cb.b)) - min(cb.r, min(cb.g, cb.b)) < 0.06 && dot(cb, vec3(.3,.59,.11)) < 0.14);
+    if (inCanopy && lum < 0.16 && max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) < 0.12) {
+      c = mix(c, vec3(0.10, 0.17, 0.10), 1.0 - uSeason.y);
+      lum = dot(c, vec3(.3,.59,.11)); rs = 10;
+    }
   }
   float tree = rs == 10 ? 1.0 : 0.0;
   float lawn = rs == 3 ? 1.0 : 0.0;
@@ -222,19 +269,60 @@ void main(){
   // 겨울: 앙상한 나무, 위를 향한 면에 눈, 얼어붙은 연못
   if (uSeason.w > 0.0) {
     vec3 bare = vec3(0.50,0.45,0.42) * (0.4 + lum * 1.3);
-    c = mix(c, bare, tree * uSeason.w * 0.85);
+    if (apm <= 2) c = mix(c, bare, tree * uSeason.w * 0.85);
     float cover;
     if (apm > 2) {
-      // z4·z8: 지도 px(0.5 m) 계단이 그림 위에 네모로 보이지 않게 이웃 4칸을 선형 보간
-      vec2 t = fc / uF - 0.5; ivec2 i = ivec2(floor(t)); vec2 f = t - vec2(i);
-      cover = mix(mix(snowCover(i), snowCover(i + ivec2(1, 0)), f.x), mix(snowCover(i + ivec2(0, 1)), snowCover(i + ivec2(1, 1)), f.x), f.y);
+      // z4·z8: 눈을 0.5 m 칸 값의 보간(뿌연 얼룩)이 아니라 이 단계 텍셀에서 끊어 얹는다.
+      float road = sem == 2 ? 1.0 : 0.0;
       // 깊은 단계의 그림은 선이 가늘다. 눈이 윤곽선까지 덮으면 뿌옇게만 보이므로 어두운 선 텍셀은 덜 덮어 그림의 선을 남긴다.
-      cover *= 0.35 + 0.65 * smoothstep(0.10, 0.30, lum);
+      float keep = 0.35 + 0.65 * smoothstep(0.10, 0.30, lum);
+      // 수관(눈 얹힌 나무): 그림의 명암을 네 단의 눈 색으로 옮긴다 — 밝게 칠한 윗면은 흰 눈, 그늘 쪽으로 갈수록 푸른 회색, 가장 어두운 텍셀(외곽선·잎 사이 그늘)도
+      // 검정이 아니라 짙은 청회색. 밝기는 텍셀과 칸 평균(바탕 z1)을 섞어 재서 잎 디더 낱알이 흰·검은 점으로 튀지 않고 덩이 단위로 이어진다.
+      // 대상: 수관으로 판정된 초록 텍셀 + 수관 속(칸 평균이 초록인 수목 칸) 의 초록 아닌 텍셀(외곽선·잎 사이 틈; 붉은 갈색 줄기는 뺀다)
+      //       + 수목 칸에 맞닿은 칸의 검은 외곽선 텍셀.
+      float sat0 = max(c0.r, max(c0.g, c0.b)) - min(c0.r, min(c0.g, c0.b));
+      bool wt = tree > 0.5;
+      if (!wt && flatW <= 0.5 && lawn < 0.5) {
+        if (inCanopy) wt = !(c0.r > c0.g * 1.25 && sat0 > 0.22);
+        else if (lum < 0.16 && sat0 < 0.12 && sem != 6 && sem != 8) for (int i = 0; i < 8; i++) if (semAt(q + N8[i]) == 10) { wt = true; break; }
+      }
+      if (wt) {
+        float l2 = mix(lum, dot(texelFetch(uBg, q, 0).rgb, vec3(.3,.59,.11)), 0.45);
+        vec3 ws = l2 > 0.32 ? vec3(0.93,0.95,0.99) : l2 > 0.22 ? vec3(0.83,0.87,0.94) : l2 > 0.13 ? vec3(0.69,0.75,0.84) : vec3(0.54,0.60,0.71);
+        c = mix(c, ws, uSeason.w);
+        cover = 0.0;
+      } else if (flatW > 0.5 || (lawn > 0.5 && zq < 1.5)) {
+        // 평지: 깊이 잡음이 만드는 벽 판정은 쓰지 않는다. 눈 두께 무늬(z1·z2 와 같은 저주파)는 연속 좌표로 재서 세 단으로 끊는다.
+        vec2 mc = fc / uF;
+        vec3 wg = ((mc.x - MAPSZ.x * 0.5) * MPP + CX) * EX + ((MAPSZ.y * 0.5 - mc.y) * MPP + CY) * EY + (groundDepth(mc.y) + CAMVD) * VD;
+        float g = hash(vec2(fp) + 5.3);
+        float n = vnoise(wg.xy * 0.35) + (g - 0.5) * 0.05;
+        // 고른 눈밭: 단 차이는 작게(z1·z2 의 평균 덮임 0.81 근처), 그 위에 텍셀 낱알(드문 반짝임·눌린 자국)
+        cover = ((n < 0.34 ? 0.78 : (n < 0.66 ? 0.84 : 0.90)) + (g > 0.965 ? 0.07 : (g < 0.03 ? -0.06 : 0.0))) * (1.0 - road * 0.82) * keep;
+      } else {
+        // 지붕·벽·물체: 네 칸의 "윗면" 값(표면 버퍼)을 위 무게로 섞어 반에서 끊는다(색 경계에서는 그림의 선, 아니면 매끈한 선).
+        //   도심 건물은 클래스(6 지붕 / 7 벽)가 그림과 잘 맞는다. 궁궐(8·9)은 클래스가 섞여 있어 깊이의 벽 판정을 쓰되
+        //   그림 색으로 바로잡는다: 기와색(어두운 무채색)은 지붕, 채도 높은 텍셀(붉은 기둥·단청)은 벽.
+        float up = upW;
+        float sat = max(c0.r, max(c0.g, c0.b)) - min(c0.r, min(c0.g, c0.b));
+        //   기와색 판정은 둘레가 대체로 윗면일 때만(지붕 한가운데의 깊이 잡음을 메운다). 벽 한가운데의 어두운 창살·문살은 벽으로 남는다.
+        //   처마 끝(둘레 절반이 벽)은 비율 문턱을 낮추되 칸 평균(바탕 z1) 색도 무채색일 때만: 창살 벽의 칸 평균은 붉거나 초록이다.
+        if (sem == 8 || sem == 9) {
+          bool tile = sat < 0.08 && lum < 0.40 && upR > 0.4;
+          if (!tile && sat < 0.08 && lum < 0.40 && upR > 0.22) {
+            vec3 cb = texelFetch(uBg, q, 0).rgb;
+            tile = max(cb.r, max(cb.g, cb.b)) - min(cb.r, min(cb.g, cb.b)) < 0.07 && dot(cb, vec3(.3,.59,.11)) < 0.40;
+          }
+          up = tile ? 1.0 : up * (1.0 - smoothstep(0.14, 0.26, sat));   // 회벽(옅은 황토색)도 벽
+        }
+        cover = step(0.5, up) * 0.84 * keep;
+      }
     } else {
+      float wall = wallness(p);
       float road = sem == 2 ? 1.0 : 0.0;
       cover = (1.0 - wall) * (0.62 + 0.38 * vnoise(wp.xy * 0.35)) * (1.0 - road * 0.82);
+      cover *= mix(1.0, 0.55 + 0.45 * step(0.35, fine), tree);
     }
-    cover *= mix(1.0, 0.55 + 0.45 * step(0.35, fine), tree);
     vec3 snow = vec3(0.90,0.93,0.98) * (0.80 + 0.20 * smoothstep(0.2, 0.8, lum));
     c = mix(c, snow, clamp(cover, 0.0, 1.0) * uSeason.w * (1.0 - water));
     c = mix(c, vec3(0.74,0.84,0.91) * (0.9 + 0.1 * fine), water * uSeason.w);
@@ -261,7 +349,7 @@ void main(){
       c = mix(c, vec3(0.86, 0.92, 0.98), liquid * ring * (1.0 - f) * 0.55);
     }
   }
-  o = vec4(c, 0.0);
+  o = vec4(c, float(snapE) / 255.0);
 }`;
 
 const VS_SPRITE = (P, L2 = false) => `#version 300 es
@@ -502,6 +590,8 @@ float contactAO(ivec2 p, float d, float z){
 }
 // 받는 면: 평지(땅·도로·녹지·마당·보행로)이고 깊이로도 땅 높이인 곳. 벽·수목·지붕은 깊이가 거칠어 얼룩이 생기므로 제외.
 bool shadeRcv(int sem, float z, ivec2 p){ return (sem <= 3 || sem == 5 || sem == 11) && z < 1.5 && wallness(p) < 0.5; }
+// z4·z8: 평지의 벽 판정은 깊이 잡음이라 뺀다(받는 면에 0.5 m 구멍이 나지 않게)
+bool shadeRcvFlat(int sem, float z){ return (sem <= 3 || sem == 5 || sem == 11) && z < 1.5; }
 `;
 // z4·z8: 그림자 항을 지도 px(0.5 m)마다 한 번만 계산해 작은 버퍼에 담는다(r 해 그림자, g 접지 음영, b 받는 면).
 // 조명 패스는 이것을 선형 보간해 읽고 다시 계단값으로 끊는다 → 0.5 m 네모 대신 그 단계 텍셀로 매끈한 경계. 텍셀마다 다시 계산하는 것보다 싸다.
@@ -514,8 +604,42 @@ void main(){
   float d = bgDepth(p);
   if (d > 1.0e8 || p.x < 0 || p.y < 0 || p.x >= int(MAPSZ.x) || p.y >= int(MAPSZ.y)) { o = vec4(0.0); return; }
   float z = heightOf(p, d);
-  if (!shadeRcv(int(texelFetch(uSem, p, 0).r * 255.0 + 0.5), z, p)) { o = vec4(0.0); return; }
+  if (!shadeRcvFlat(int(texelFetch(uSem, p, 0).r * 255.0 + 0.5), z)) { o = vec4(0.0); return; }
   o = vec4(uSunAmt > 0.01 ? castShadow(p, d) : 0.0, contactAO(p, d, z), 1.0, 1.0);
+}`;
+// z4·z8 표면 버퍼: 지도 px(0.5 m)마다 r = 윗면(눈이 얹히는 면), g = 평지(그림자를 받는 땅). 깊이·클래스 맵에서만 나오므로 창이 움직일 때만 다시 그린다.
+//   깊이·클래스 맵의 한두 칸짜리 낱알(평지 가운데 벽 판정, 지붕 가운데 구멍)은 확대하면 0.5 m 덩어리로 보인다 → 3×3 이웃을 바탕(z1) 색이 비슷한 칸끼리만
+//   평균해 거른다(색이 다른 칸 = 다른 면은 안 섞이므로 그림의 경계는 남는다). 값은 0~1 로 두고 알베도 패스가 텍셀마다 다시 섞어 반에서 끊는다.
+const FS_SURF = (P) => COMMON(P) + `
+uniform sampler2D uSem, uBg;
+out vec4 o;
+int semAt(ivec2 q){ return int(texelFetch(uSem, q, 0).r * 255.0 + 0.5); }
+vec2 surfRaw(ivec2 c){
+  c = clamp(c, ivec2(0), ivec2(MAPSZ) - 1);
+  float d = bgDepth(c);
+  if (d > 1.0e8) return vec2(0.0);
+  int sem = semAt(c);
+  float z = heightOf(c, d);
+  // 수목 칸은 깊이가 거칠다: 땅 높이면 평지(수관 밑 흙·잔디), 아니면 윗면 아님(수관의 눈은 그림 밝기로 따로 얹는다)
+  if (((sem <= 3 || sem == 5 || sem == 11) && z < 1.5) || (sem == 10 && z < 1.5)) return vec2(1.0, 1.0);
+  if (sem == 10) return vec2(0.0);
+  return vec2(sem == 6 ? 1.0 : sem == 7 ? 0.0 : 1.0 - wallness(c), 0.0);
+}
+const ivec2 RING[8] = ivec2[8](ivec2(3,0), ivec2(-3,0), ivec2(0,3), ivec2(0,-3), ivec2(2,2), ivec2(-2,2), ivec2(2,-2), ivec2(-2,-2));
+void main(){
+  ivec2 p = clamp(ivec2(floor(gl_FragCoord.xy + uOrg)), ivec2(0), ivec2(MAPSZ) - 1);
+  vec3 g0 = texelFetch(uBg, p, 0).rgb;
+  vec2 acc = vec2(0.0); float ws = 0.0, wide = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    ivec2 c = clamp(p + ivec2(i, j), ivec2(0), ivec2(MAPSZ) - 1);
+    vec3 dc = texelFetch(uBg, c, 0).rgb - g0;
+    float w = (i == 0 && j == 0 ? 1.5 : 1.0) / (0.004 + dot(dc, dc));
+    vec2 r = surfRaw(c);
+    acc += w * r; ws += w; wide += r.x;
+  }
+  // b = 둘레(반경 3 px)까지의 윗면 비율(색 무관): 지붕 한가운데인지 벽 한가운데인지(알베도 패스의 궁궐 기와색 판정이 쓴다)
+  for (int i = 0; i < 8; i++) wide += surfRaw(p + RING[i]).x;
+  o = vec4(acc / ws, wide / 17.0, 1.0);
 }`;
 // 룩 2 블룸(지도 공간): 밝은 부분만 뽑아 1/2 → 1/4 로 줄인다. 화면 패스에서 가산만(그림은 안 흐린다).
 const FS_BRIGHT = `#version 300 es
@@ -583,7 +707,10 @@ const float NB = 1.0;
 vec3 grade(vec3 c, int sem){
   float l = dot(c, vec3(.3,.59,.11));
   // 형광 초록 → 세이지·올리브(색 키, 녹지·수목 클래스는 조금 더)
-  float g = clamp((c.g - max(c.r, c.b)) * (sem == 3 || sem == 10 ? 7.0 : 5.0), 0.0, 1.0);
+  // z4·z8: 녹지·마당 구분을 클래스 칸(0.5 m) 대신 텍셀 색으로(수관 안에 채도가 다른 네모 조각이 생기지 않게)
+  float gk = c.g - max(c.r, c.b);
+  bool deep = uF > 2.5, veg = deep ? gk > 0.07 : (sem == 3 || sem == 10);
+  float g = clamp(gk * (veg ? 7.0 : 5.0), 0.0, 1.0);
   vec3 s = vec3(l) + (c - l) * 0.66;
   s.r += (s.g - s.r) * 0.22;
   s.b += (s.g - s.b) * 0.10;
@@ -591,7 +718,7 @@ vec3 grade(vec3 c, int sem){
   // 원색 파랑 물 → 차분한 청록
   if (sem == 4 && c.b > c.r * 1.15) { vec3 w = vec3(l) + (c - l) * 0.6; w.g += (w.b - w.g) * 0.3; c = w * 0.96 + vec3(0.01, 0.03, 0.035); }
   // 마당·광장 베이지 → 따뜻한 회색 쪽
-  if (sem == 5 || sem == 11) c = vec3(l) + (c - l) * 0.78;
+  if ((sem == 5 || sem == 11) && !(deep && veg)) c = vec3(l) + (c - l) * 0.78;
   l = dot(c, vec3(.3,.59,.11));
   c = vec3(l) + (c - l) * 0.92;
   // 중간톤 약한 S 커브(밝기에만 더해 채도는 그대로). 낮에만 온전히.
@@ -632,11 +759,24 @@ void main(){
   }
   vec4 a = texelFetch(uAlbedo, fp, 0);
   vec3 c = a.rgb;
-  float z = heightOf(p, d);
+  float emis = step(0.5, a.a);   // 발광 점(스프라이트). 그 밖의 알파 = z4·z8 칸 스냅(알베도 패스가 고른 칸, 0 = 제자리)
+  ivec2 q = p; float dq = d;
+  int rcvA = -1;   // z4·z8 배경 텍셀: 알베도 패스가 정한 평지 여부(1/0). −1 = 스프라이트·얕은 단계 → 칸에서 판정
+  if (uF > 2.5 && emis < 0.5) {
+    int e0 = int(a.a * 255.0 + 0.5), e = e0 & 15, ex = e - (e / 3) * 3, ey = e / 3;
+    if (e0 >= 32) rcvA = (e0 >> 4) & 1;
+    ivec2 qq = p + ivec2(ex == 2 ? -1 : ex, ey == 2 ? -1 : ey);
+    float dd = bgDepth(qq);
+    if (dd < 1.0e8) { q = qq; dq = dd; }
+  }
+  // 아래에서 깊이·클래스 맵을 읽는 것은 모두 고른 칸 q 기준(z1·z2 에서는 q = p)
+  float z = heightOf(q, dq);
   vec3 wp = worldOf(p, d);
   float night = 1.0 - uDay;
   // 구름 그림자(낮)
-  float cl = fbm(wp.xy * 0.0042 + vec2(uTime * 0.012, uTime * 0.005));
+  vec2 cw = wp.xy;
+  if (uF > 2.5) { vec2 fr = fc / uF - (vec2(p) + 0.5); cw += (fr.x * EX.xy - fr.y * EY.xy) * MPP; }   // z4·z8: 0.5 m 계단 없이 연속 좌표로
+  float cl = fbm(cw * 0.0042 + vec2(uTime * 0.012, uTime * 0.005));
   c *= 1.0 - 0.13 * uDay * smoothstep(0.50, 0.66, cl);
 #ifdef LOOK2
   vec3 amb = mix(vec3(0.12,0.16,0.36), vec3(1.0), uDay);   // 빛 밖은 차가운 남청 어둠
@@ -646,24 +786,30 @@ void main(){
   amb += uDusk * vec3(0.30, 0.06, -0.12);
   vec3 lit = c * amb;
 #ifdef LOOK2
-  int sem2 = int(texelFetch(uSem, p, 0).r * 255.0 + 0.5);
+  int sem2 = semAt(q);
   {
     float sh = 0.0, ao = 0.0;
     if (uShadeRect.z > 0.0) {
-      // z4·z8: 그림자 버퍼를 네 번 읽어(±반 px) 3 px 폭으로 고른다 → 깊이 잡음이 만드는 0.5 m 낱알·체크무늬가 확대돼 보이지 않는다.
-      // 받는 면 여부도 고른 값으로 판정(경계가 0.5 m 계단 대신 매끈한 선, 낱알 구멍은 메워진다). 값은 받는 면끼리만 평균해 계단값으로 다시 끊는다.
-      vec2 su = (fc / uF - uShadeRect.xy) * uShadeRect.zw, sd = 0.5 * uShadeRect.zw;
-      vec3 v = texture(uShade, su + sd).rgb + texture(uShade, su - sd).rgb + texture(uShade, su + vec2(sd.x, -sd.y)).rgb + texture(uShade, su + vec2(-sd.x, sd.y)).rgb;
-      if (v.b > 2.0) {
-        vec2 q = floor(v.rg / v.b * 2.0 + 0.5) * 0.5;
-        sh = q.x; ao = q.y;
+      // z4·z8: 그림자 버퍼(0.5 m)를 다섯 번 읽어(가운데 + ±1.5 px, 선형) 5 px 폭으로 고른다 → 깊이 잡음이 만드는 낱알·혹이 확대돼 보이지 않는다.
+      // 받는 면 여부는 고른 칸으로(경계가 그림의 선을 따른다). 값은 받는 면끼리만 평균해 계단값으로 다시 끊는다 → 경계는 이 단계 텍셀로 또렷하다.
+      if (rcvA < 0 ? shadeRcvFlat(sem2, z) : rcvA == 1) {
+        vec2 su = (fc / uF - uShadeRect.xy) * uShadeRect.zw, sd = uShadeRect.zw;
+        sd *= 1.5;
+        vec3 v = texture(uShade, su).rgb + texture(uShade, su + sd).rgb + texture(uShade, su - sd).rgb + texture(uShade, su + vec2(sd.x, -sd.y)).rgb + texture(uShade, su + vec2(-sd.x, sd.y)).rgb;
+        // 바깥 고리(±2.5 px 축 방향) 네 번 더: 깊이 잡음이 만드는 3~5 px 굴곡(혹·톱니)을 눌러 그림자 윤곽이 건물 윤곽처럼 곧게 이어진다
+        vec2 s2 = uShadeRect.zw * 2.5;
+        v += 0.6 * (texture(uShade, su + vec2(s2.x, 0.0)).rgb + texture(uShade, su - vec2(s2.x, 0.0)).rgb + texture(uShade, su + vec2(0.0, s2.y)).rgb + texture(uShade, su - vec2(0.0, s2.y)).rgb);
+        if (v.b > 0.5) {
+          vec2 sq = floor(v.rg / v.b * 2.0 + 0.5) * 0.5;
+          sh = sq.x; ao = sq.y;
+        }
       }
     } else if (shadeRcv(sem2, z, p)) {
       sh = uSunAmt > 0.01 ? castShadow(p, d) : 0.0;
       ao = contactAO(p, d, z);
     }
     vec3 m = mix(vec3(1.0), uShadeCol, max(sh * uSunAmt, ao * mix(0.55, 0.8, uDay)));
-    if ((sem2 == 6 || sem2 == 8) && wallness(p) < 0.5) m *= 1.0 + roofFacing(p) * mix(0.0, 0.05, uSunAmt);
+    if ((sem2 == 6 || sem2 == 8) && wallness(q) < 0.5) m *= 1.0 + roofFacing(q) * mix(0.0, 0.05, uSunAmt);
     lit *= m;
     // 비: 젖은 도로·보행로는 어둡고 차갑게, 밤엔 가로등·전조등이 길게 비친다(아래 빛 웅덩이에 더함)
     if (uRain > 0.01 && (sem2 == 2 || sem2 == 11) && z < 1.5) lit *= mix(vec3(1.0), vec3(0.74, 0.79, 0.90), uRain);
@@ -677,32 +823,64 @@ void main(){
   lit += c * L * night * low * 1.25;
 #endif
   // 창문 불빛
-  float wall = wallness(p);
-  int sem = int(texelFetch(uSem, p, 0).r * 255.0 + 0.5);
+  float wall = wallness(q);
+  int sem = semAt(q);
   if (night > 0.02) {
     // 궁궐 야간 조명: 기둥·벽을 아래에서 비추는 따뜻한 빛.
-    // 궁궐 벽 칸(0.5 m)이 그림의 벽 윤곽과 어긋나므로 기와색(어두운 무채색) 텍셀은 빼고(처마·외곽선이 칸 단위로 빛나지 않게),
-    // z4·z8 에서는 칸 경계를 선형 보간해 빛이 0.5 m 계단 대신 반 칸에 걸쳐 스민다.
-    float w9 = sem == 9 ? 1.0 : 0.0;
-    if (uF > 2.5) {
-      vec2 t9 = fc / uF - 0.5; ivec2 i9 = ivec2(floor(t9)); vec2 f9 = t9 - vec2(i9);
-      vec4 s9 = vec4(equal(ivec4(semAt(i9), semAt(i9 + ivec2(1, 0)), semAt(i9 + ivec2(0, 1)), semAt(i9 + ivec2(1, 1))), ivec4(9)));
-      w9 = smoothstep(0.2, 0.8, mix(mix(s9.x, s9.y, f9.x), mix(s9.z, s9.w, f9.x), f9.y));
-    }
+    // 궁궐 벽 칸(0.5 m)이 그림의 벽 윤곽과 어긋나므로 기와색(어두운 무채색) 텍셀은 뺀다(처마·외곽선이 칸 단위로 빛나지 않게).
+    // z4·z8 에서는 칸이 그림 경계에 스냅돼 있다(q).
     float l9 = dot(c, vec3(.3,.59,.11));
-    if (w9 > 0.0 && !(max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) < 0.07 && l9 < 0.36))
-      lit += (c * 0.4 + vec3(l9) * 0.6 + 0.05) * vec3(1.10, 0.80, 0.48) * night * 0.85 * NB * w9;
+    float s9 = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+    // z4·z8: 궁궐 지붕 칸(8)에 걸친 벽 텍셀(채도 높은 기둥·단청)도 벽으로 본다 → 벽 가운데 0.5 m 칸이 꺼진 얼룩으로 남지 않는다
+    //   또 고른 칸이 지붕이어도 둘레 네 칸의 벽 비율(선형 보간)이 반을 넘으면 벽이다(색이 비슷한 처마 칸으로 스냅된 어두운 벽 텍셀).
+    float w9 = sem == 9 ? 1.0 : 0.0;
+    if (uF > 2.5 && sem == 8 && z < 14.0) {
+      if (s9 > 0.15 && c.r >= c.g) w9 = 1.0;   // 초록 기운 텍셀(지붕 칸에 걸친 잔디·수목)은 벽이 아니다
+      else {
+        vec2 t9 = fc / uF - 0.5; ivec2 i9 = ivec2(floor(t9)); vec2 f9 = t9 - vec2(i9);
+        vec4 n9 = vec4(equal(ivec4(semAt(i9), semAt(i9 + ivec2(1, 0)), semAt(i9 + ivec2(0, 1)), semAt(i9 + ivec2(1, 1))), ivec4(9)));
+        w9 = step(0.5, mix(mix(n9.x, n9.y, f9.x), mix(n9.z, n9.w, f9.x), f9.y));
+      }
+    }
+    // 벽 칸이어도 밝은 윗면(기단 바닥·계단 디딤판·눈: 밝고 채도 낮은 텍셀)은 벽만큼 받지 않는다. 그대로 더하면 넓은 면이 크림색으로 타서
+    // 칸 모양(0.5 m)의 딱딱한 테두리가 드러나고, 겨울에는 눈 덮인 곳과 아닌 곳이 조각으로 갈린다 → 약하게 받아 고르게 밝은 면으로.
+    if (w9 > 0.0 && !(s9 < 0.07 && l9 < 0.36))
+      lit += (c * 0.4 + vec3(l9) * 0.6 + 0.05) * vec3(1.10, 0.80, 0.48) * night * 0.85 * NB * w9 * mix(1.0, 0.32, smoothstep(0.45, 0.62, l9) * (1.0 - smoothstep(0.16, 0.28, s9)));
     if (sem == 9) {
     } else if (sem == 7 && z > 1.6) {
       // 그림에 그려진 창(푸르거나 어두운 벽 픽셀)에 불을 켠다. 켜짐 여부는 창 칸(가로 1.5 m × 층) 단위.
       float lum = dot(c, vec3(.3,.59,.11));
       // 유리: 푸른 기가 도는 중간 밝기 픽셀만(검은 외곽선·창틀은 제외해 창살이 남게 한다)
       float glass = isGlass(c) ? 1.0 : 0.0;
-      float fl = floor(z / 3.3);
-      float col = floor(float(p.x) / 4.0);
-      float bld = floor(d / 9.0);
-      // 켜짐 칸(가로 2 m × 층)은 지도 px 단위다. z4·z8 에서는 칸 경계가 0.5 m 계단으로 유리 한 장을 가로지를 수 있다
-      // (유리 조각을 창틀까지 훑어 조각 단위로 켜는 방식은 반사선이 많은 파사드에서 가로 줄무늬가 생겨 쓰지 않는다).
+      // 켜짐 칸 = 가로 2 m × 층 × 깊이 띠(건물 구분용). 깊이는 벽 밑동의 깊이(높이 성분을 뺀 값)로 잰다 → 띠가 층마다 달라지지 않는다.
+      // z4·z8 에서는 높이·깊이를 같은 벽면의 네 칸에서 선형 보간하고 가로는 연속 좌표로 잰다
+      // → 층 선이 0.5 m 계단 대신 벽면을 따라가는 곧은 선(그림의 창턱과 나란한 선)이 되고, 깊이 띠는 가로 칸 한가운데 값으로 재서
+      //   띠 경계가 가로 칸 경계(세로선)와 겹친다(유리를 비스듬히 가르지 않는다). 켜지는 칸은 z1·z2 와 경계 근처만 다르다.
+      float zc = z, dc = dq - z * VD.z, xc = float(q.x);
+      if (uF > 2.5) {
+        vec2 t = fc / uF - 0.5; ivec2 i0 = ivec2(floor(t)); vec2 f = t - vec2(i0);
+        float ws = 0.0, zs = 0.0, ds = 0.0;
+        vec4 d0 = vec4(0.0), ok = vec4(0.0);
+        for (int k = 0; k < 4; k++) {
+          ivec2 o2 = ivec2(k & 1, k >> 1), cq = i0 + o2;
+          float dk = bgDepth(cq);
+          if (dk > 1.0e8 || abs(dk - dq) > 2.0 || semAt(cq) != 7) continue;
+          float w = (o2.x == 1 ? f.x : 1.0 - f.x) * (o2.y == 1 ? f.y : 1.0 - f.y) + 1.0e-3;
+          float zk = heightOf(cq, dk);
+          d0[k] = dk - zk * VD.z; ok[k] = 1.0;
+          ws += w; zs += w * zk; ds += w * d0[k];
+        }
+        xc = fc.x / uF;
+        if (ws > 0.0) {
+          zc = zs / ws; dc = ds / ws;
+          // 벽면을 따라 가로 1 px 당 밑동 깊이 변화 → 가로 칸 한가운데로 옮겨 잰다
+          float n = ok.x * ok.y + ok.z * ok.w;
+          if (n > 0.5) dc += ((d0.y - d0.x) * ok.x * ok.y + (d0.w - d0.z) * ok.z * ok.w) / n * ((floor(xc / 4.0) + 0.5) * 4.0 - xc);
+        }
+      }
+      float fl = floor(zc / 3.3);
+      float col = floor(xc / 4.0);
+      float bld = floor(dc / 9.0);
       float r = hash3(vec3(col, fl, bld));
       float flick = hash3(vec3(col, fl, floor(uTime / 7.0 + r * 9.0)));
       float thresh = mix(0.36, 0.10, uLateNight);
@@ -771,7 +949,7 @@ void main(){
     }
   }
 #endif
-  lit = mix(lit, c, a.a * night);             // 발광 점
+  lit = mix(lit, c, emis * night);             // 발광 점
   if (uDebug > 0.5) {                          // 가림 판정 클래스 오버레이
     float k = floor(texelFetch(uCls, p, 0).r * 255.0 + 0.5);
     vec3 dc = k < 0.5 ? vec3(0.0) : k < 1.5 ? vec3(0.9,0.2,0.2) : k < 2.5 ? vec3(0.2,0.7,0.3) : k < 3.5 ? vec3(1.0,0.6,0.1) : k < 4.5 ? vec3(0.2,0.8,0.9) : vec3(0.9,0.2,0.9);
@@ -889,7 +1067,14 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, internal, format, gl.UNSIGNED_BYTE, img);
+    if (img.data && img.data.length === img.width * img.height * 4) {
+      // 직접 디코드한 수치 맵(RGBA 바이트, assets.js dataMap): 필요한 채널만 뽑아 바이트 배열로 올린다(브라우저의 그림 변환 경로를 타지 않는다)
+      const n = format === gl.RED ? 1 : format === gl.RG ? 2 : 4, px = img.width * img.height;
+      let buf = img.data;
+      if (n < 4) { buf = new Uint8Array(px * n); for (let i = 0; i < px; i++) for (let k = 0; k < n; k++) buf[i * n + k] = img.data[i * 4 + k]; }
+      else buf = new Uint8Array(img.data.buffer, img.data.byteOffset, px * 4);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal, img.width, img.height, 0, format, gl.UNSIGNED_BYTE, buf);
+    } else gl.texImage2D(gl.TEXTURE_2D, 0, internal, format, gl.UNSIGNED_BYTE, img);
     if (mip) gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mip ? gl.NEAREST_MIPMAP_NEAREST : filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
@@ -959,11 +1144,12 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
   let win = null;   // { FA, FB, cw, ch }
   const ensureWin = (cw, ch) => {
     if (win && win.cw === cw && win.ch === ch) return win;
-    if (win) for (const t of [win.FA, win.FB, win.SH]) { gl.deleteTexture(t.t); gl.deleteFramebuffer(t.f); }
+    if (win) for (const t of [win.FA, win.FB, win.SH, win.SF]) { gl.deleteTexture(t.t); gl.deleteFramebuffer(t.f); }
     winScale(cw, ch);
     const [ww, wh] = winK.dims;
     // SH: z4·z8 그림자 항(지도 px 해상도, 창이 덮는 지도 영역 + 둘레 2 px)
-    win = { FA: target(ww, wh, gl.NEAREST, false), FB: target(ww, wh, gl.LINEAR, false), SH: target(Math.ceil(ww / 4) + 6, Math.ceil(wh / 4) + 6, gl.LINEAR, false), cw, ch };
+    win = { FA: target(ww, wh, gl.NEAREST, false), FB: target(ww, wh, gl.LINEAR, false), SH: target(Math.ceil(ww / 4) + 6, Math.ceil(wh / 4) + 6, gl.LINEAR, false),
+      SF: target(Math.ceil(ww / 4) + 6, Math.ceil(wh / 4) + 6, gl.NEAREST, false), sfKey: '', cw, ch };
     return win;
   };
   // 깊은 단계(4·8) 스프라이트 아틀라스: 처음 그 단계로 그릴 때 만든다(opts.hiSprites(SS) → hisprites.js).
@@ -1013,6 +1199,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
   };
 
   const pAlbedo = compile(gl, VS_FULL, FS_ALBEDO(proj));
+  let pSurf = null;   // z4·z8 표면 버퍼(처음 쓸 때 컴파일)
   // 룩별 스프라이트·조명 프로그램은 쓸 때 컴파일한다(첫 화면은 opts.look 하나만).
   // 룩 2(LOOK2 변형)가 실패하면 경고만 남기고 예전 룩으로 그린다. 예전 룩까지 실패하면 예외 → 정지 그림.
   let look1 = null, look2 = null;
@@ -1122,7 +1309,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
       o.hiSprites = Object.values(HI).reduce((n, a) => n + a.bytes, 0);
       o.fbo1 = rgba(W, H) + rgba(W, H) * 4 / 3 + rgba(W >> 1, H >> 1) * (FS ? 3 : 1) + (FQ ? rgba(W >> 2, H >> 2) : 0);
       o.fbo2 = SETS[2] ? rgba(W * 2, H * 2) * 2 : 0;
-      o.window = win ? rgba(win.FA.w, win.FA.h) * 2 + rgba(win.SH.w, win.SH.h) : 0;
+      o.window = win ? rgba(win.FA.w, win.FA.h) * 2 + rgba(win.SH.w, win.SH.h) * 2 : 0;
       o.tiles = tiles ? tiles.bytes : 0;
       o.total = Object.values(o).reduce((a, b) => a + b, 0);
       return o;
@@ -1181,6 +1368,21 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
       gl.disable(gl.DEPTH_TEST);
       if (vis) {
         gl.enable(gl.SCISSOR_TEST);
+        // ── 표면 버퍼(z4·z8): 지도 px 해상도, 창 영역이 바뀔 때만
+        const SF = F >= 4 && win && !SETS[2] ? win.SF : null;
+        if (SF && win.sfKey !== `${x0},${y0},${x1},${y1}`) {
+          win.sfKey = `${x0},${y0},${x1},${y1}`;
+          pSurf ||= compile(gl, VS_FULL, FS_SURF(proj));
+          gl.bindFramebuffer(gl.FRAMEBUFFER, SF.f);
+          gl.viewport(0, 0, SF.w, SF.h); gl.scissor(0, 0, Math.min(SF.w, x1 - x0 + 4), Math.min(SF.h, y1 - y0 + 4));
+          gl.disable(gl.BLEND);
+          gl.useProgram(pSurf.p);
+          gl.uniform2f(pSurf.u.uOrg, x0 - 2, y0 - 2);
+          bind(0, T.depth); gl.uniform1i(pSurf.u.uDepth, 0);
+          bind(1, T.bg); gl.uniform1i(pSurf.u.uBg, 1);
+          bind(2, T.sem); gl.uniform1i(pSurf.u.uSem, 2);
+          gl.bindVertexArray(emptyVao); gl.drawArrays(gl.TRIANGLES, 0, 3);
+        }
         // ── A: albedo
         gl.bindFramebuffer(gl.FRAMEBUFFER, FA.f);
         gl.viewport(0, 0, FA.w, FA.h); gl.scissor(x0 * F - ox, y0 * F - oy, (x1 - x0) * F, (y1 - y0) * F);
@@ -1190,6 +1392,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
         gl.uniform1f(pAlbedo.u.uF, F); gl.uniform1f(pAlbedo.u.uBgScale, tileOn ? F : bgScale);
         gl.uniform2f(pAlbedo.u.uOrg, ox, oy); gl.uniform1f(pAlbedo.u.uTileOn, tileOn ? 1 : 0);
         if (tileOn) { bind(3, tiles.atlas); gl.uniform1i(pAlbedo.u.uTiles, 3); bind(4, tiles.index(F)); gl.uniform1i(pAlbedo.u.uTileIdx, 4); }
+        bind(5, SF ? SF.t : T.sem); gl.uniform1i(pAlbedo.u.uSurf, 5); gl.uniform2f(pAlbedo.u.uSurfOrg, x0 - 2, y0 - 2);
         bind(0, T.depth); gl.uniform1i(pAlbedo.u.uDepth, 0);
         bind(1, T.bg); gl.uniform1i(pAlbedo.u.uBg, 1);
         bind(2, T.sem); gl.uniform1i(pAlbedo.u.uSem, 2);

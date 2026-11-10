@@ -182,6 +182,8 @@ function stroller(x, y) {
 
 // ── 덧그림(몸 좌표에 맞춰 그려 둔 소품) ──
 const O = {
+  // 달리기 팔: 한쪽은 앞으로 접어 올리고 반대쪽은 뒤로 내린다(f 로 번갈아)
+  runArm: (f) => (x, y) => { for (const side of [-1, 1]) { const up = (side < 0) === (f === 0), hx = side * (up ? 1.9 : 1.5), hy = up ? 2.7 : 4.4; if (ell(x, y, hx, hy, 0.34, 0.34) || seg(x, y, side * 1.2, 3.45, hx, hy, 0.26)) return 'S'; } return null; },
   handUp: (side, f) => (x, y) => { const tx = side * (1.75 + f * 0.35), ty = 0.9 + f * 0.25; return ell(x, y, tx, ty, 0.32, 0.32) || seg(x, y, side * 1.15, 2.75, tx, ty, 0.28) ? 'S' : null; },
   cam: (x, y) => (Math.abs(x - 0.1) <= 0.62 && y >= 1.05 && y < 1.95 ? (ell(x, y, 0.1, 1.5, 0.3, 0.3) ? 'L' : 'K') : seg(x, y, -1.1, 3.0, -0.6, 1.7, 0.28) || seg(x, y, 1.1, 3.0, 0.75, 1.7, 0.28) ? 'S' : null),
   point: (side) => (x, y) => (ell(x, y, side * 2.65, 2.45, 0.3, 0.3) || seg(x, y, side * 1.15, 2.8, side * 2.6, 2.45, 0.28) ? 'S' : null),
@@ -214,6 +216,40 @@ const O = {
 // 땅 위 소품
 const G = {
   bench: (x, y) => (y >= 7.0 && y < 7.6 && Math.abs(x) <= 3.4 ? 'A' : y >= 7.6 && y < 8.9 && (Math.abs(Math.abs(x) - 2.9) < 0.22) ? 'B' : y >= 6.0 && y < 6.5 && Math.abs(x) <= 3.4 ? 'B' : null),
+  // 해치: 높은 기단 위에 앉은 석수. 화면 왼쪽 아래(남쪽, 도로 쪽)를 본다. 곱슬 갈기, 정수리 뿔, 부릅뜬 눈과 이를 드러낸 입, 목 방울, 비늘, 말린 꼬리.
+  // x −4…4(2 m), y −5…9(기단 1.35 m + 석상 2.15 m). L 밝은 화강암, M 중간, D 그늘, K 눈·입.
+  haechi: (x, y) => {
+    if (y >= 3.6) {
+      if (y < 4.35) return Math.abs(x) <= 3.7 ? 'L' : null;                                  // 갑석
+      if (y >= 8.25) return Math.abs(x) <= 3.7 ? (x > 1.3 ? 'D' : 'M') : null;                // 지대석
+      return Math.abs(x) <= 3.15 ? (x > 1.3 || y < 4.8 ? 'D' : (Math.abs(x + 0.9) < 1.5 && y > 5.4 && y < 7.6 ? 'L' : 'M')) : null;   // 몸돌(앞면에 밝은 면석)
+    }
+    // 얼굴: 짙은 눈썹 아래 부릅뜬 눈, 넓은 코, 이를 드러내고 웃는 큰 입(해치의 표정)
+    if (ell(x, y, -2.1, -2.7, 0.34, 0.36) || ell(x, y, -0.55, -2.7, 0.34, 0.36)) return 'K';
+    if (seg(x, y, -2.7, -3.45, -1.75, -3.2, 0.2) || seg(x, y, -0.9, -3.2, 0.05, -3.45, 0.2)) return 'D';
+    if (ell(x, y, -1.3, -1.95, 0.7, 0.3)) return 'D';
+    if (x > -2.65 && x < 0.05 && y > -1.5 && y < -0.8 && ell(x, y, -1.3, -1.75, 1.5, 0.98)) return y < -1.32 || (Math.floor((x + 2.65) / 0.45) & 1) ? 'K' : 'L';
+    if (ell(x, y, -1.3, -2.3, 1.75, 1.7)) return 'L';
+    if (ell(x, y, -1.3, -5.25, 0.5, 0.45)) return 'L';                                         // 정수리 뿔(혹)
+    // 갈기: 얼굴을 빙 두른 곱슬 열 덩이. 덩이마다 그늘 테두리를 둘러 소용돌이로 읽히게 한다.
+    for (let k = 0; k < 10; k++) {
+      const a = (k * 36 + 18) * Math.PI / 180, cx = -1.3 + Math.cos(a) * 2.2, cy = -2.45 + Math.sin(a) * 2.1;
+      if (ell(x, y, cx, cy, 0.52, 0.52)) return ell(x, y, cx + 0.1, cy + 0.1, 0.2, 0.2) ? 'D' : 'L';
+      if (ell(x, y, cx, cy, 0.82, 0.82)) return 'M';
+    }
+    if (ell(x, y, -1.3, -2.45, 2.3, 2.2)) return 'D';
+    if (ell(x, y, -1.3, 0.45, 0.5, 0.5)) return ell(x, y, -1.3, 0.6, 0.18, 0.18) ? 'K' : 'D';   // 목 방울
+    if (y > 0.4 && y < 3.6 && ((x > -2.8 && x < -1.7) || (x > -1.2 && x < -0.1))) return y > 2.9 ? 'M' : 'L';   // 앞다리와 발
+    // 말린 꼬리(등 뒤로 솟은 불꽃 모양)
+    if (ell(x, y, 3.35, -0.2, 0.28, 0.4)) return 'D';
+    if (ell(x, y, 3.3, 0.1, 0.72, 1.35) || ell(x, y, 3.0, -1.5, 0.6, 0.62) || ell(x, y, 3.55, -2.3, 0.4, 0.45)) return 'L';
+    if (ell(x, y, -0.95, 1.0, 1.95, 2.6)) return y > 1.4 && Math.abs(x + 0.95) < 0.2 ? 'M' : 'L';   // 가슴
+    if (ell(x, y, 1.3, 1.75, 2.3, 1.95)) {                                                       // 몸·엉덩이(비늘 무늬)
+      const u = x / 0.9 + (Math.floor(y / 0.8) & 1) * 0.5, fx = u - Math.floor(u) - 0.5, fy = y / 0.8 - Math.floor(y / 0.8) - 0.5;
+      return fx * fx + fy * fy < 0.05 ? 'D' : ell(x, y, 1.9, 2.3, 1.5, 1.2) ? 'L' : 'M';
+    }
+    return null;
+  },
   snowman: (x, y) => {
     if (ell(x, y, -0.3, 6.15, 0.14, 0.14) || ell(x, y, 0.3, 6.15, 0.14, 0.14) || ell(x, y, 0, 7.6, 0.13, 0.13) || ell(x, y, 0, 8.1, 0.13, 0.13)) return 'K';
     if (seg(x, y, 0, 6.4, 0.6, 6.5, 0.12)) return 'A';
@@ -314,6 +350,7 @@ export function buildCast(scene) {
   reg.stroller = [['#3d5a80', '#293241'], ['#c8553d', '#5a2a22'], ['#6a8f6b', '#33483a']].map((p) => both([-2, 5, 3, 10], stroller, { C: rgb(p[0]), c: rgb(p[1]), K: [48, 48, 56], S: SKIN2[0] }));
   // 덧그림
   reg.hand = SKIN.map((S) => [[-1, 0], [-1, 1], [1, 0], [1, 1]].map(([side, f]) => cell(side < 0 ? [-3, 0, -1, 4] : [1, 0, 3, 4], O.handUp(side, f), { S })));   // [피부][왼0, 왼1, 오0, 오1]
+  reg.runarm = SKIN.map((S) => [0, 1].map((f) => cell([-3, 2, 3, 5], O.runArm(f), { S })));   // [피부][걸음 0, 1]
   reg.cam = SKIN.map((S) => cell([-2, 1, 2, 4], O.cam, { S, K: [40, 40, 48], L: [150, 190, 220] }));
   reg.point = SKIN.map((S) => [-1, 1].map((side) => cell(side < 0 ? [-3, 2, -1, 4] : [1, 2, 3, 4], O.point(side), { S })));
   const tint = (list, box, part, o) => list.map((c) => { const A = rgb(c); return cell(box, part, { A, B: mul(A, 0.78), K: [60, 60, 70], W: [220, 220, 226] }, o); });
@@ -333,6 +370,7 @@ export function buildCast(scene) {
   reg.guitar = cell([-2, 2, 3, 6], O.guitar, { A: [176, 116, 62], B: [96, 66, 44], K: [50, 36, 30] });
   // 땅 위 소품
   reg.bench = cell([-4, 6, 4, 9], G.bench, { A: [150, 110, 72], B: [104, 76, 52] }, { min: 3 });
+  reg.haechi = cell([-5, -6, 5, 10], G.haechi, { L: [228, 220, 202], M: [192, 183, 165], D: [142, 136, 126], K: [60, 56, 58] }, { min: 3 });
   reg.snowman = cell([-2, 5, 2, 10], G.snowman, { W: [244, 246, 250], K: [40, 40, 48], A: [236, 130, 40], B: [200, 60, 60], T: [96, 70, 50] }, { min: 2 });
   reg.mat = MAT_COL.map((p) => cell([-5, 6, 5, 9], G.mat, { A: rgb(p[0]), B: rgb(p[1]) }, { flat: true }));
   reg.kite = KITE_COL.map((p) => cell([-2, 0, 2, 7], G.kite, { A: rgb(p[0]), B: rgb(p[1]) }, { flat: true, min: 2 }));
@@ -437,7 +475,7 @@ export function createCastDraw(scene, proj) {
       adultLike = true;
       const sit = p === 6 ? reg.sit.get(L.pal) : p === 7 ? reg.kneel.get(L.pal) : null;
       if (sit) { put(sit, X, Y, dep, lift); top = p === 6 ? -2.9 : -1.7; adultLike = false; }
-      else base(L.pal, moving ? Math.floor(dist / (p === 8 ? 0.62 : 0.45)) & 3 : 1, X, Y, dep, lift);
+      else base(o.season === 3 && L.palW !== undefined ? L.palW : L.pal, moving ? Math.floor(dist / (p === 8 ? 0.62 : 0.45)) & 3 : 1, X, Y, dep, lift);
     } else if (fam === 'hf' || fam === 'hm' || fam === 'g') {
       adultLike = true;
       put((fam === 'hf' ? reg.hf : fam === 'hm' ? reg.hm : reg.guard)[L.pal][moving ? Math.floor(dist / 0.5) & 1 : 2], X, Y, dep, lift);
@@ -452,7 +490,8 @@ export function createCastDraw(scene, proj) {
       const h = L.h, winter = o.season === 3, sk = fam === 'a' ? L.pal % 4 : 0;
       if (fam === 'a') {
         if (L.bag) { put(reg.pack[L.bag - 1], X, Y, od, lift); od -= 0.02; }
-        if (winter && h < 0.78 && !L.uniform) { put(reg.coat[Math.floor(h * 131) % reg.coat.length], X, Y, od, lift); od -= 0.02; }
+        if (p === 8 && moving) { put(reg.runarm[sk][Math.floor(dist / 0.62) & 1], X, Y, od, lift); od -= 0.02; }
+        if (winter && h < 0.78 && !L.uniform && !L.runner) { put(reg.coat[Math.floor(h * 131) % reg.coat.length], X, Y, od, lift); od -= 0.02; }
         if (winter && fr(h * 7) < 0.5) { put(reg.scarf[Math.floor(h * 53) % reg.scarf.length], X, Y, od, lift); od -= 0.02; }
         if (L.hat) { put(reg.hats[L.hat - 1], X, Y, od, lift); od -= 0.02; } else if (winter && fr(h * 13) < 0.3) { put(reg.beanie[Math.floor(h * 71) % reg.beanie.length], X, Y, od, lift); od -= 0.02; top = 1; }
         if (L.cane) { put(L.cane === 2 ? reg.broom : reg.cane, X, Y, od, lift); od -= 0.02; }
@@ -526,8 +565,27 @@ export function createCastDraw(scene, proj) {
       };
       for (const a of sys.actors) if (a.on) one(a);
       for (const g of sys.guests) { one(g); for (const f of g.fol) fig(f.x, f.y, g.z, f.look, f.look.fam === 'dog' && f.sit ? 'sit' : 'stand', 0, g.face, f.hop, null, f.bub, t); }
+      // 궁 둘레 러너: 발을 디딜 때마다 반 칸씩 들썩인다
+      for (const r of sys.runners || []) {
+        if (!r.vis) continue;
+        const face = sys.rpos(r, al, P);
+        proj.project(P[0], P[1], 0, S);
+        if (S[0] < v0 - 12 || S[0] > v2 + 12 || S[1] < v1 - 12 || S[1] > v3 + 12) continue;
+        const d0 = r.ou + (r.u - r.ou) * al;
+        fig(P[0], P[1], 0, r.look, 'run', d0, face, (Math.floor(d0 / 0.62) & 1) ? 0.024 : 0, null, 0, t);
+        for (const f of r.fol) { const fc = sys.rpos(r, al, Q, f.dd), d1 = d0 + f.dd + 40; fig(Q[0], Q[1], 0, f.look, 'run', d1, fc, (Math.floor(d1 / 0.62) & 1) ? 0.024 : 0, null, 0, t); }
+      }
       for (const p of sys.props) {
         if (p.sc && !p.sc.on) continue;
+        if (p.type === 'haechi') {
+          proj.project(p.x, p.y, 0, S);
+          if (S[0] < v0 - 6 || S[0] > v2 + 6 || S[1] < v1 - 4 || S[1] > v3 + 10) continue;
+          const hx = Math.round(S[0] * q) / q, hy = Math.round(S[1] * q) / q;
+          R.shadow(hx - 1.6, hy + 0.1, 6.5, 1.3, 0, 0, S[2], 3);
+          put(reg.haechi, hx, hy, S[2]);
+          if (opt.day < 0.5) R.light(S[0], S[1] - 2.5, 9, 0.55, 0.5, 0.4);   // 밤에는 옅은 조명
+          continue;
+        }
         if (p.type === 'mat') decal(reg.mat[p.variant], p.x, p.y);
         else if (p.type === 'kite') {
           const alt = 9 + 1.2 * Math.sin(t * 0.7 + p.ph), sway = 2.2 * Math.sin(t * 0.45 + p.ph * 2);

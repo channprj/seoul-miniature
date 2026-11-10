@@ -264,3 +264,68 @@ test('관람 시간 밖에는 궁 안에 방문객·안내원·장면이 없다.
   assert.ok(sys.stats.nightphoto - before >= 3, `밤 사진 ${sys.stats.nightphoto - before}회`);
   assert.ok(sys.scenes.filter((sc) => sc.kind === 'photo' && sc.on).every((sc) => !sc.inPal));
 });
+
+test('해치: 광화문 앞에 대칭으로 한 쌍, 보도·광장 위. 사람이 0.8 m 안에 서거나 지나가지 않는다', () => {
+  const { sys, birds } = make(5);
+  assert.equal(sys.haechi.length, 2);
+  const [a, b] = sys.haechi;
+  assert.ok(Math.abs(a.y - b.y) < 1e-6 && b.x - a.x >= 18 && b.x - a.x <= 40, `간격 ${(b.x - a.x).toFixed(1)} m`);
+  for (const h of sys.haechi) for (const [dx, dy] of [[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]]) assert.ok([1, 11].includes(sys.clsAt(h.x + dx, h.y + dy)), `클래스 ${sys.clsAt(h.x + dx, h.y + dy)}`);
+  assert.ok(sys.scenes.filter((sc) => sc.haechi).length >= 2, '해치 앞 사진 자리');
+  const P = [0, 0, 0];
+  let near = 9;
+  const see = (x, y) => { for (const h of sys.haechi) near = Math.min(near, Math.hypot(x - h.x, y - h.y)); };
+  for (let i = 0; i < 30 * 240; i++) {
+    birds.step(DT); sys.step(DT, { tod: 9 + i * DT * 24 / 150, season: 2 });
+    if (i % 5) continue;
+    for (const a2 of sys.actors) if (a2.on) see(a2.x, a2.y);
+    for (const g of sys.guests) { see(g.x, g.y); for (const f of g.fol) see(f.x, f.y); }
+    for (const s2 of sys.standing) if (s2.vis) see(s2.x, s2.y);
+    for (let j = 0; j < sys.walkers.length; j++) if (sys.walkers[j].vis) { sys.wpos(j, sys.time, P); see(P[0], P[1]); }
+    for (const r of sys.runners) if (r.vis) { sys.rpos(r, 1, P); see(P[0], P[1]); }
+  }
+  assert.ok(near >= 0.8, `해치에 가장 가까이 간 사람 ${near.toFixed(2)} m`);
+  assert.ok(sys.spot([0, 0, 0, 0]).length === 0);
+  const px = sys.toPx(a.x, a.y);
+  assert.ok(sys.spot([px[0] - 100, px[1] - 60, px[0] + 100, px[1] + 60]).includes('haechi'));
+});
+
+test('궁 둘레 러너: 담길(보도) 위만 달리고 차도·궁 안에 들어가지 않는다. 아침·저녁에 많고 낮에도 있다. 크루는 줄지어 달린다', () => {
+  const { sys, birds } = make(5);
+  const total = sys.runChains.reduce((s2, c) => s2 + c.L, 0);
+  assert.ok(total > 1500, `담길 ${total.toFixed(0)} m`);
+  assert.ok(sys.runners.some((r) => r.fol.length >= 3) && sys.runners.filter((r) => !r.fol.length).length > 10);
+  // 구간을 이어 붙였다: 가로수에 가려 끊겼던 곳이 합쳐져 긴 구간(500 m 이상)이 둘 넘게 나온다. 클래스 10 = 가로수 수관에 가려진 담길(화면 공간 클래스 맵).
+  assert.ok(sys.runChains.filter((c) => c.L >= 500).length >= 2, `구간 ${sys.runChains.map((c) => c.L.toFixed(0))}`);
+  const P = [0, 0, 0], Q = [0, 0, 0];
+  const view = [1400, 1000, 1720, 1200];   // 동쪽 담길을 가까이 보는 화면
+  // 보고 있는 화면 안의 러너는 사라지지 않으므로(그게 규칙) 수를 셀 때는 화면 밖만 센다
+  const count = () => sys.runners.filter((r) => { if (!r.vis) return false; sys.rpos(r, 1, P); const s2 = sys.toPx(P[0], P[1]); return !(s2[0] > view[0] - 60 && s2[0] < view[2] + 60 && s2[1] > view[1] - 60 && s2[1] < view[3] + 60); }).reduce((n, r) => n + 1 + r.fol.length, 0);
+  const n = {};
+  let bad = [], maxStep = 0, flips = 0;
+  const inView = (x, y) => { const s2 = sys.toPx(x, y); return s2[0] > view[0] && s2[0] < view[2] && s2[1] > view[1] && s2[1] < view[3]; };
+  const prev = sys.runners.map((r) => { sys.rpos(r, 1, P); return [P[0], P[1], r.vis]; });
+  for (const [tod, season, rain, key] of [[7.5, 2, false, 'am'], [12, 2, false, 'noon'], [19.5, 2, false, 'pm'], [3, 2, false, 'night'], [7.5, 2, true, 'rain'], [7.5, 3, false, 'winter']]) {
+    for (let i = 0; i < 30 * 45; i++) {
+      birds.step(DT); sys.step(DT, { tod, season, rain, view });
+      sys.runners.forEach((r, j) => {
+        sys.rpos(r, 1, P);
+        if (i > 0 || key !== 'am') {
+          maxStep = Math.max(maxStep, Math.hypot(P[0] - prev[j][0], P[1] - prev[j][1]));
+          if (r.vis !== prev[j][2] && inView(P[0], P[1])) flips++;
+        }
+        prev[j][0] = P[0]; prev[j][1] = P[1]; prev[j][2] = r.vis;
+        if (!r.vis || i % 6) return;
+        for (const dd of [0, ...r.fol.map((f) => f.dd)]) { sys.rpos(r, 1, Q, dd); const c = sys.clsAt(Q[0], Q[1]); if ((c !== 1 && c !== 11 && c !== 10) || sys.inPalace(Q[0], Q[1])) bad.push([key, r.id, dd, c]); }
+      });
+    }
+    n[key] = count();
+  }
+  assert.deepEqual(bad.slice(0, 5), [], `보도 밖 ${bad.length}건`);
+  assert.ok(maxStep <= 0.3, `러너 한 스텝 이동 ${maxStep.toFixed(3)} m`);
+  assert.equal(flips, 0, '시야 안에서 나타나거나 사라진 러너');
+  assert.ok(n.am >= 55 && n.pm >= 55, `아침 ${n.am} 저녁 ${n.pm}`);
+  assert.ok(n.noon >= 20 && n.noon <= n.am * 0.65, `낮 ${n.noon}`);
+  assert.ok(n.night <= 8, `새벽 ${n.night}`);
+  assert.ok(n.rain <= n.am * 0.45 && n.winter < n.am, `비 ${n.rain} 겨울 ${n.winter}`);
+});
