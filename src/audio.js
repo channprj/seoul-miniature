@@ -48,7 +48,7 @@ export function readPref(search) {
 // ── 브라우저 쪽. btn 은 aria-pressed 토글 버튼, getDay() 는 0(밤)..1(낮).
 export function createBgm(btn, getDay) {
   // 오프라인 단일 HTML 에는 소리를 넣지 않는다
-  if (globalThis.__ISO_ASSETS__ || location.protocol === 'file:' || !window.AudioContext) { btn.hidden = true; return null; }
+  if (globalThis.__ISO_ASSETS__ || location.protocol === 'file:' || !(window.AudioContext || window.webkitAudioContext)) { btn.hidden = true; return null; }
   let want = readPref(location.search);    // 사용자가 고른 상태(버튼 표시)
   let gesture = false, ctx = null, night = nightState(false, getDay());
   const tr = { day: null, night: null };   // { gain, src }
@@ -62,7 +62,8 @@ export function createBgm(btn, getDay) {
   async function load(name) {
     const r = await fetch(BASE + name);
     if (!r.ok) throw new Error(`${name} ${r.status}`);
-    const buf = await ctx.decodeAudioData(await r.arrayBuffer());
+    const data = await r.arrayBuffer();
+    const buf = await new Promise((ok, no) => { const p = ctx.decodeAudioData(data, ok, no); if (p && p.catch) p.catch(no); });   // 구형 WebKit 은 콜백 형식만
     const lp = loopPoints(buf.duration);
     const gain = ctx.createGain(); gain.gain.value = 0; gain.connect(ctx.destination);
     const src = ctx.createBufferSource();
@@ -82,11 +83,28 @@ export function createBgm(btn, getDay) {
       g.cancelScheduledValues(now); g.setValueAtTime(g.value, now); g.linearRampToValueAtTime(s.gain, now + s.sec);
     }
     cur = next;
-    if (!next.day && !next.night && ctx) setTimeout(() => { if (!cur.day && !cur.night && ctx.state === 'running') ctx.suspend(); }, FADE * 1000 + 200);
+    if (!next.day && !next.night && ctx) setTimeout(() => { if (!cur.day && !cur.night && ctx.state === 'running') { ctx.suspend(); if (keep) keep.pause(); } }, FADE * 1000 + 200);
+  }
+  // iOS 는 Web Audio 만 쓰면 무음 스위치(벨소리 끔)에 같이 묻힌다. 오디오 세션을 '재생'으로 바꾸고(iOS 17+),
+  // 그게 없는 판에서는 소리 없는 <audio> 를 함께 돌려 같은 효과를 낸다. 사용자 동작 안에서 불러야 한다.
+  let keep = null;
+  function unmute() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* 지원 안 함 */ }
+    if (keep) { if (keep.paused) keep.play().catch(() => {}); return; }
+    try {
+      const n = 4000, b = new Uint8Array(44 + n), v = new DataView(b.buffer);
+      const w = (o, t) => { for (let i = 0; i < t.length; i++) b[o + i] = t.charCodeAt(i); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+      b.fill(128, 44);   // 8비트 무음
+      keep = new Audio(URL.createObjectURL(new Blob([b], { type: 'audio/wav' })));
+      keep.loop = true; keep.setAttribute('playsinline', ''); keep.play().catch(() => {});
+    } catch { keep = null; }
   }
   async function start() {
     if (dead || !want || !gesture) return;
-    if (!ctx) ctx = new AudioContext();
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    unmute();
     if (ctx.state !== 'running' && !document.hidden) ctx.resume();
     if (!tr.day) {
       try { tr.day = await once('bgm.mp3'); } catch (e) { fail(e); return; }
@@ -104,10 +122,11 @@ export function createBgm(btn, getDay) {
   // 첫 사용자 동작에서만 시작한다(자동재생 정책). 미리 켜 둔 상태(bgm=1·저장값)도 여기서 시작.
   const onGesture = () => {
     gesture = true;
-    removeEventListener('pointerdown', onGesture, true); removeEventListener('keydown', onGesture, true);
+    for (const ev of GEST) removeEventListener(ev, onGesture, true);
     start();
   };
-  addEventListener('pointerdown', onGesture, true); addEventListener('keydown', onGesture, true);
+  const GEST = ['pointerup', 'touchend', 'click', 'keydown'];   // iOS 는 누르는 순간(pointerdown)을 소리 허용 동작으로 치지 않는다
+  for (const ev of GEST) addEventListener(ev, onGesture, true);
 
   btn.onclick = () => {
     if (dead) return;
@@ -119,8 +138,8 @@ export function createBgm(btn, getDay) {
   };
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
-    if (document.hidden) ctx.suspend();
-    else if (cur.day || cur.night) ctx.resume();
+    if (document.hidden) { ctx.suspend(); if (keep) keep.pause(); }
+    else if (cur.day || cur.night) { ctx.resume(); if (keep) keep.play().catch(() => {}); }
   });
   // 0.5초마다 시각을 보고 낮↔밤을 바꾼다
   setInterval(() => {
