@@ -66,10 +66,14 @@ export function createMovers(scene, proj) {
   function emitPeople(R, t, nightAmt) {
     const SS = SPRITE_SCALE, fw = PERSON.w / SS, fh = PERSON.h / SS, foot = (PERSON.h - 1) / SS;
     const keep = 1 - nightAmt * 0.72;          // 밤에는 사람이 줄어든다
+    // 깊은 단계(R.hi: 0.125·0.0625 m 아틀라스)면 그 해상도로 그린 사람을 쓰고 위치도 그 격자에 맞춘다(크기·발 위치는 같다)
+    const hi = R.hi, q = hi ? hi.SS : SS;
     const put = (x, y, z, pal, pose) => {
       proj.project(x, y, z, S);
-      const dx = Math.round(S[0] * SS) / SS - fw / 2, dy = Math.round(S[1] * SS) / SS - foot;
-      R.sprite(dx, dy, fw, fh, (pal % PERSON.perRow) * PERSON.cellW * 4 + pose * PERSON.cellW, Math.floor(pal / PERSON.perRow) * PERSON.cellH, S[2], 1, foot);
+      const dx = Math.round(S[0] * q) / q - fw / 2, dy = Math.round(S[1] * q) / q - foot;
+      const c = hi && hi.people[pal] && hi.people[pal][pose];   // 깊은 판이 없는 팔레트·자세는 기본 아틀라스로(kind 1)
+      if (c) R.sprite(dx, dy, fw, fh, c[0], c[1], S[2], 10, foot);
+      else R.sprite(dx, dy, fw, fh, (pal % PERSON.perRow) * PERSON.cellW * 4 + pose * PERSON.cellW, Math.floor(pal / PERSON.perRow) * PERSON.cellH, S[2], 1, foot);
       R.shadow(dx, dy + foot, fw + 0.5, 0.5, 0, 0, S[2], 3);
     };
     for (let i = 0; i < walkers.length; i++) {
@@ -89,6 +93,9 @@ export function createMovers(scene, proj) {
 
   function emitVehicles(R, vehicles, alpha, nightAmt) {
     const lightsOn = nightAmt > 0.35;
+    const hi = R.hi, q = hi ? hi.SS : 1;
+    // 깊은 단계: 전조등·미등 점을 지도 1 px(0.5 m) 대신 0.2 m 점으로
+    const dot = (x, y, d, red) => (hi ? R.sprite(Math.round(x * q) / q - 0.2, Math.round(y * q) / q - 0.2, 0.4, 0.4, 0, 0, d, 4, red) : R.sprite(Math.round(x), Math.round(y), 1, 1, 0, 0, d, 4, red));
     for (let i = 0; i < vehicles.length; i++) {
       const v = vehicles[i];
       const x = v.px + (v.x - v.px) * alpha, y = v.py + (v.y - v.py) * alpha, z = v.pz + (v.z - v.pz) * alpha;
@@ -98,10 +105,18 @@ export function createMovers(scene, proj) {
       const fr = vehFrames.get(v.kind + '|' + v.color)?.[h];
       if (!fr) continue;
       proj.project(x, y, z, S);
-      const px = Math.round(S[0] * SPRITE_SCALE) / SPRITE_SCALE, py = Math.round(S[1] * SPRITE_SCALE) / SPRITE_SCALE, dep = S[2];
-      const f = fr.frame, sf = fr.sframe;
-      R.sprite(px - fr.ax, py - fr.ay, f[2], f[3], f[0], f[1], dep, 0);
-      R.shadow(px - fr.sax, py - fr.say, sf[2], sf[3], sf[0], sf[1], dep, 2);
+      const dep = S[2];
+      if (hi && hi.vehFrames[v.kind]) {
+        // 깊은 단계: 그 해상도로 래스터화한 차종 모형(색은 셰이더가 칠한다)
+        const hf = hi.vehFrames[v.kind][h], px = Math.round(S[0] * q) / q, py = Math.round(S[1] * q) / q;
+        R.sprite(px - hf.ax, py - hf.ay, hf.w, hf.h, hf.src[0], hf.src[1], dep, 7, hi.colorIx.get(v.color) || 0);
+        R.shadow(px - hf.ax, py - hf.ay, hf.w, hf.h, hf.src[0], hf.src[1], dep, 8);
+      } else {
+        const px = Math.round(S[0] * SPRITE_SCALE) / SPRITE_SCALE, py = Math.round(S[1] * SPRITE_SCALE) / SPRITE_SCALE;
+        const f = fr.frame, sf = fr.sframe;
+        R.sprite(px - fr.ax, py - fr.ay, f[2], f[3], f[0], f[1], dep, 0);
+        R.shadow(px - fr.sax, py - fr.say, sf[2], sf[3], sf[0], sf[1], dep, 2);
+      }
       if (lightsOn) {
         const c = Math.cos(th), s = Math.sin(th);
         const hl = v.len * 0.5, hw = v.wid * 0.32, zl = 0.7;
@@ -121,9 +136,9 @@ export function createMovers(scene, proj) {
         // 전조등·미등 점(차체 깊이보다 살짝 앞에 둬서 차체 위에 찍힌다)
         for (let side = -1; side <= 1; side += 2) {
           proj.project(x + c * hl - s * hw * side, y + s * hl + c * hw * side, z + zl, P);
-          R.sprite(Math.round(P[0]), Math.round(P[1]), 1, 1, 0, 0, P[2] - 0.8, 4, 0);
+          dot(P[0], P[1], P[2] - 0.8, 0);
           proj.project(x - c * hl - s * hw * side, y - s * hl + c * hw * side, z + zl, P);
-          R.sprite(Math.round(P[0]), Math.round(P[1]), 1, 1, 0, 0, P[2] - 0.8, 4, 1);
+          dot(P[0], P[1], P[2] - 0.8, 1);
         }
         if (v.braking) { proj.project(x - c * (hl + 1.5), y - s * (hl + 1.5), z, P); R.light(P[0], P[1], 9, 0.9, 0.12, 0.06); }
       }
@@ -143,9 +158,13 @@ export function createMovers(scene, proj) {
   function emitSignals(R, signals) {
     // 신호등: 정지선 옆 2px 점(항상 발광)
     if (!signals) return;
+    const q = R.hi ? R.hi.SS : 0;
     for (const sg of signals) {
       proj.project(sg.x, sg.y, (sg.z || 0) + 4.5, S);
-      R.sprite(Math.round(S[0]), Math.round(S[1]), 2, 2, 0, 0, S[2] - 1, 5, sg.state === 'g' ? 0 : sg.state === 'y' ? 1 : 2);
+      const st = sg.state === 'g' ? 0 : sg.state === 'y' ? 1 : 2;
+      // 깊은 단계: 2 px(1 m) 네모 대신 0.4 m 등
+      if (q) R.sprite(Math.round(S[0] * q) / q + 0.1, Math.round(S[1] * q) / q + 0.1, 0.8, 0.8, 0, 0, S[2] - 1, 5, st);
+      else R.sprite(Math.round(S[0]), Math.round(S[1]), 2, 2, 0, 0, S[2] - 1, 5, st);
     }
   }
 

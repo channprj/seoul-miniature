@@ -180,9 +180,18 @@ export function emitBirds(R, sys, o) {
   const px = (x, y, dep, col) => R.sprite(x, y, S, S, 0, 0, dep - 0.3, 6, col);
   // 축소 화면(1배 합성)에서는 반 px 사각형이 래스터에서 빠질 수 있어 지도 1px 점 하나로 그린다
   const dot = (x, y, dep, col) => R.sprite(Math.round(x), Math.round(y) - 1, 1, 1, 0, 0, dep - 0.3, 6, col);
-  const flyer = (shape, col, dep) => {
+  // 깊은 단계(R.hi): 그 해상도로 그린 새 한 장(kind 9). 자리·크기는 그림 px 판과 같다.
+  const hi = o.F >= 4 ? R.hi : null, q = hi ? hi.SS : 2;
+  const sn = (v) => Math.round(v * q) / q;
+  const flyer = (shape, col, dep, type = 'pigeon') => {
     const sy = P.y - P.alt * o.kH;
     if (o.F === 1) { dot(P.x, sy, dep, col); return; }
+    if (hi) {
+      const f = hi.birds[type][P.frame];
+      R.sprite(snap(P.x) - Math.floor(f.bw / 2) * S, snap(sy) - 2 * S, f.w, f.h, f.src[0], f.src[1], dep - 0.3, 9);
+      R.shadow(sn(P.x) + 0.05, sn(P.y) + 0.1, 0.4, 0.25, 0, 0, dep, 3);
+      return;
+    }
     const wd = shape[0].length, bx = snap(P.x) - Math.floor(wd / 2) * S, by = snap(sy) - shape.length * S;
     shape.forEach((row, r) => { for (let i = 0; i < wd; i++) if (row[i] !== '.') px(bx + i * S, by + r * S, dep, C[row[i]]); });
     R.shadow(snap(P.x), snap(P.y), S, S, 0, 0, dep, 3);   // 새보다 먼 면에만 그림자가 진다(지붕 위 포함)
@@ -194,6 +203,12 @@ export function emitBirds(R, sys, o) {
     // 앉은 비둘기: 몸 1px + 머리 1px(쪼는 중이면 머리 숨김), 발밑 그림자 1px
     const x = snap(P.x), y = snap(P.y);
     if (o.F === 1) { dot(x, y, b.d, C.D); continue; }
+    if (hi) {
+      const f = hi.birds.sit[(b.face > 0 ? 2 : 0) + (P.frame === 3 ? 1 : 0)];
+      R.sprite(x - 0.25, y - 1, f.w, f.h, f.src[0], f.src[1], b.d - 0.3, 9);
+      R.shadow(sn(P.x) - 0.1, sn(P.y), 0.5, 0.25, 0, 0, b.d, 3);
+      continue;
+    }
     px(x, y - S, b.d, C.B);
     if (P.frame !== 3) px(x + b.face * S, y - S, b.d, C.D);
     R.shadow(x, y, S, S, 0, 0, b.d, 3);
@@ -201,6 +216,6 @@ export function emitBirds(R, sys, o) {
   for (const l of sys.loners) {
     if (l.vis > keep) continue;
     sys.lonerPose(l, P);
-    flyer(SHAPES[l.type][P.frame], l.type === 'egret' ? C.W : C.K, depthOf(l.d, l.cy));
+    flyer(SHAPES[l.type][P.frame], l.type === 'egret' ? C.W : C.K, depthOf(l.d, l.cy), l.type);
   }
 }

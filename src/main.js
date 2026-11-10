@@ -1,14 +1,19 @@
 import { buildVehicleAtlas } from './vehicles.js';
-import { loadAssets, probeWebGL2, pickResolution, stillUrl } from './assets.js';
+import { loadAssets, probeWebGL2, pickResolution, stillUrl, lodLive, lodFailed } from './assets.js';
 import { makeProjection, decodeDepth } from './geom.js';
 import { createRenderer } from './render.js';
+import { hiSpritesSteps } from './hisprites.js';
 import { createMovers, createFallbackTraffic, buildPeopleAtlas } from './movers.js';
 import { createCamera } from './camera.js';
 import { PLACES, TOUR, sampleTour } from './tour.js';
 import { aboutHtml, verifyHtml } from './panels.js';
+import { initSnap } from './snap.js';
+import { createFinds } from './finds.js';
 import { createBirds, emitBirds } from './birds.js';
 import { createBgm } from './audio.js';
 import { buildStaticLights } from './nightlights.js';
+import { createPeople, addCast } from './sim/people.js';
+import { buildCast, extendPeopleAtlas, withCastHi, createCastDraw } from './emotes.js';
 
 const $ = (s) => document.querySelector(s);
 const canvas = $('#c');
@@ -68,20 +73,25 @@ async function boot() {
   const assets = await loadAssets((p) => { bar.style.width = `${Math.round(p * 100)}%`; }, { res: pickResolution(gl) });
   const scene = assets.scene;
   const proj = makeProjection(scene.camera);
-  assets.people = buildPeopleAtlas(scene.walker_palette);
+  // 사람 유형·소품(emotes.js): 옷 색을 팔레트 뒤에 덧붙이고, 전용 모형 칸을 기본 사람 아틀라스 아래에 붙인다
+  addCast(scene);
+  const castReg = buildCast(scene);
+  assets.people = extendPeopleAtlas(buildPeopleAtlas(scene.walker_palette), castReg);
   // 차량 스프라이트는 코드로 그린다(배경과 같은 픽셀 격자). 교통 sim 이 쓰는 차종·색 조합은 그대로 둔다.
   const va = buildVehicleAtlas(scene, proj);
   assets.veh = va.veh; assets.vehDepth = va.vehDepth; assets.vehShadow = va.vehShadow;
   scene.vehicle_atlas = { ...scene.vehicle_atlas, frames: va.frames };
   let R;
-  try { R = createRenderer(canvas, assets, proj, { look: LOOK0 }); } catch (e) { console.error(e); throw new NoWebGL('그래픽(WebGL2) 화면을 만들지 못했습니다.'); }
+  try { R = createRenderer(canvas, assets, proj, { look: LOOK0, hiSprites: (SS) => withCastHi(hiSpritesSteps(scene, proj, SS), castReg, SS) }); } catch (e) { console.error(e); throw new NoWebGL('그래픽(WebGL2) 화면을 만들지 못했습니다.'); }
   // 메모리가 모자라면 iOS·안드로이드가 컨텍스트를 빼앗는다. 복구는 새로고침뿐이라 안내만 띄운다.
   let lost = false;
   canvas.addEventListener('webglcontextlost', (e) => {
-    e.preventDefault(); lost = true;
+    e.preventDefault(); lost = true; lodFailed(R.F);   // 깊은 단계에서 잃었으면 다음에는 한 단계 얕게
     showAlert('화면이 멈췄습니다', '기기 그래픽 메모리가 모자라 미니어처를 더 그리지 못했습니다. 다시 불러오면 이어서 볼 수 있습니다.', '다시 불러오기', () => location.reload());
   });
   const movers = createMovers(scene, proj);
+  let people = null;   // 사람들의 행동(sim/people.js). 못 만들면 예전처럼 movers 가 걷는 사람만 그린다.
+  const castDraw = createCastDraw(scene, proj);
   // 새: classes.png 로 앉을 곳·돌 곳을 고정 시드로 고른다. 깊이는 앉는 자리에서만 읽고 버린다.
   const birds = (() => {
     const W = assets.sem.width, H = assets.sem.height, sp = readPixels(assets.sem);
@@ -95,6 +105,10 @@ async function boot() {
     const depthAt = (x, y) => { const o = (y * DW + x) * 4, d = decodeDepth(dp[o], dp[o + 1]); return Number.isFinite(d) ? d : groundAt(y + 0.5); };
     R.setStaticLights(buildStaticLights({ w: W, h: H, cls }, movers.lamps, proj, [-258.6, 12.2, 297.3, 878.1]));   // 룩 2 야간 정적 광원
     const b = createBirds({ w: W, h: H, cls }, { seed: Number(params.get('birdseed') || 11), depthAt });
+    try {
+      people = createPeople(scene, { w: W, h: H, cls }, { seed: Number(params.get('peopleseed') || params.get('seed') || 5), birds: b, proj,
+        heightAt: (x, y) => (groundAt(y + 0.5) - depthAt(x, y)) * -proj.vd[2] });
+    } catch (e) { console.warn('사람 행동을 만들지 못해 걷는 사람만 그립니다:', e); }
     dp = null;   // depthAt 클로저가 18 MB 픽셀 배열을 붙잡지 않게
     return b;
   })();
@@ -112,8 +126,10 @@ async function boot() {
   }
 
   const cam = createCamera(canvas, proj.W, proj.H);
-  // 휴대폰 경로(절반 해상도 그림 + 원본 타일): 최대 확대 = 원본 텍셀(0.25 m) 하나가 기기 4 px. 더블탭은 텍셀 1·2·4 px 배율에 멈춘다.
-  if (assets.res === 1) { cam.maxScale = 8; cam.tapSteps = [2, 4, 8]; }
+  // 최대 확대 = 가장 세밀한 그림 단계의 텍셀 하나가 기기 4 px(타일 z8 → 배율 32, z4 → 16). 통짜 0.25 m 그림(데스크톱 예전 경로)은 예전 한도.
+  // 터치 더블탭은 배율 2·4·8·16·32 에 멈춘다(단계가 바뀌는 자리 = 텍셀 1 px, 그 위는 2·4 px).
+  const finest = assets.tiles ? Math.max(1, ...(R.tiles?.zs || [1])) : assets.res === 1 ? 2 : 0;
+  if (finest) { cam.maxScale = 4 * finest; cam.tapSteps = [2, 4, 8, 16, 32].filter((v) => v <= cam.maxScale); }
   const state = {
     tod: Number(params.get('tod') || 9), autoTime: !params.has('tod'),
     season: Number(params.get('season') || 1), seasonW: [0, 0, 0, 0],
@@ -151,26 +167,66 @@ async function boot() {
   function setCaption(text, hold = 6) { caption.textContent = text || ''; captionTimer = hold; }
 
   const tourBtn = $('#tour');
-  function startTour() { state.tour = { t: 0 }; document.body.classList.add('cinema'); tourBtn.classList.add('on'); cam.lock(true); }
+  const setRain = (on) => { state.rain = on; rainBtn.setAttribute('aria-pressed', String(on)); };
+  function startTour() { state.tour = { t: 0, rain0: state.rain, shot: -1 }; document.body.classList.add('cinema'); tourBtn.classList.add('on'); cam.lock(true); }
   function stopTour() {
     if (!state.tour) return;
+    setRain(state.tour.rain0);   // 둘러보기의 비 장면이 끝나면 보던 날씨로
     state.tour = null; document.body.classList.remove('cinema'); tourBtn.classList.remove('on'); cam.lock(false);
     todInput.value = state.tod;
   }
   tourBtn.onclick = () => (state.tour ? stopTour() : startTour());
-  cam.onUserInput = () => { if (state.tour && !state.manual) stopTour(); };
+  // 사람 따라가기: 같은 사람을 한 번 더 누르면 카메라가 따라간다. 드래그·확대·다시 누르기로 푼다.
+  let follow = null, lastHit = null, lastHitAt = 0, dropped = null, droppedAt = 0;
+  const sameRef = (a, b) => !!a && !!b && (a.actor ? a.actor === b.actor : a.wi === b.wi && !b.actor);
+  const unfollow = () => { if (!follow) return; dropped = follow; droppedAt = performance.now(); follow = null; document.body.classList.remove('following'); setCaption(''); };
+  cam.onUserInput = () => { if (state.tour && !state.manual) stopTour(); unfollow(); };
   // 비둘기: 탭하거나 마우스를 (버튼 안 누르고) 가까이 가져가면 날아오른다. 드래그로 지나가는 것만으로는 안 난다.
   const scareAt = (x, y) => {
     const v = cam.view();
     birds.scare(v.originX + x * cam.dpr / v.scale, v.originY + y * cam.dpr / v.scale, Math.max(6, 36 / cam.zoom));
   };
   canvas.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' && !e.buttons) scareAt(e.clientX, e.clientY); }, { passive: true });
-  cam.onTap = (x, y) => scareAt(x, y);
+  cam.onTap = (x, y) => {
+    scareAt(x, y);
+    if (!people || state.tour) return;
+    const v = cam.view(), now = performance.now();
+    const hit = people.tap(v.originX + x * cam.dpr / v.scale, v.originY + y * cam.dpr / v.scale, Math.max(2.5, 16 / cam.zoom));
+    if (!hit) { lastHit = null; return; }
+    // 방금 따라가던 사람을 다시 누른 것이면 풀기만 한다
+    if (sameRef(hit, dropped) && now - droppedAt < 500) { lastHit = null; return; }
+    if (sameRef(hit, lastHit) && now - lastHitAt < 6000 && !hit.floating) {
+      follow = hit; lastHit = null; document.body.classList.add('following');
+      setCaption('따라가는 중 · 화면을 끌거나 다시 누르면 멈춥니다', 4);
+      const p = people.locate(follow);
+      if (p && cam.zoom * cam.dpr < 3) cam.flyTo(p[0], p[1], canvas.clientHeight / (3 / cam.dpr), 0.9);
+    } else { lastHit = hit; lastHitAt = now; if (cam.zoom * cam.dpr >= 1.4) setCaption('한 번 더 누르면 따라갑니다', 2.5); }
+  };
 
   const panel = $('#panel'), body = $('#panel-body');
   const openPanel = (html) => { body.innerHTML = html; panel.hidden = false; };
   panel.onclick = (e) => { if (e.target === panel || e.target.classList.contains('close')) panel.hidden = true; };
   $('#about').onclick = () => openPanel(aboutHtml());
+  // 찾아보기: 가까이 본 화면에 들어온 장면을 0.5초마다 확인해 적어 둔다(sim/people.js 의 spot)
+  let storage = null;
+  try { storage = window.localStorage; } catch { /* 막힌 브라우저 */ }
+  const finds = createFinds(storage), findsBtn = $('#finds'), spotOut = [];
+  findsBtn.innerHTML = finds.label();
+  let spotT = 0;
+  const spotCheck = (dt) => {
+    if (!people || (spotT -= dt) > 0) return;
+    spotT = 0.5;
+    spotOut.length = 0;
+    const fresh = finds.mark(people.spot(pEnv.view, spotOut));
+    if (!fresh.length) return;
+    findsBtn.innerHTML = finds.label();
+    findsBtn.classList.remove('new'); void findsBtn.offsetWidth; findsBtn.classList.add('new');
+    if (!state.tour) setCaption(`찾았다 · ${fresh.map((f) => f[1]).join(', ')}`, 5);
+  };
+  findsBtn.onclick = () => {
+    openPanel(finds.html());
+    body.querySelector('[data-a=finds-reset]').onclick = () => { finds.reset(); findsBtn.innerHTML = finds.label(); findsBtn.onclick(); };
+  };
   $('#verify').onclick = () => {
     openPanel(verifyHtml(state));
     body.querySelector('[data-a=cls]').onclick = (e) => { state.debug = !state.debug; e.target.setAttribute('aria-pressed', String(state.debug)); };
@@ -324,13 +380,20 @@ async function boot() {
 
   // ── 프레임
   let acc = 0;
+  const pEnv = { tod: 9, day: 1, season: 1, rain: 0, view: [0, 0, 1, 1] }, followPos = [0, 0];
   const ft = new Float32Array(240); let fi = 0, fn = 0;
   function advance(dt) {
     state.time += dt;
     acc += dt;
     let n = 0;
-    while (acc >= SIM_DT && n < 8) { traffic.step(SIM_DT); birds.step(SIM_DT); acc -= SIM_DT; n++; }
+    if (people) {
+      const v = cam.view();
+      pEnv.tod = state.tod; pEnv.day = env.day; pEnv.season = state.season; pEnv.rain = env.rain;
+      pEnv.view[0] = v.originX; pEnv.view[1] = v.originY; pEnv.view[2] = v.originX + canvas.width / v.scale; pEnv.view[3] = v.originY + canvas.height / v.scale;
+    }
+    while (acc >= SIM_DT && n < 8) { traffic.step(SIM_DT); birds.step(SIM_DT); if (people) people.step(SIM_DT, pEnv); acc -= SIM_DT; n++; }
     if (n === 8) acc = 0;
+    spotCheck(dt);
     if (state.tour) {
       state.tour.t += dt;
       const s = sampleTour(state.tour.t);
@@ -338,28 +401,38 @@ async function boot() {
       else {
         cam.set(s.x, s.y, fitVh(s.vh));
         state.tod = s.tod; if (s.season !== state.season) setSeason(s.season);
+        if (s.rain !== state.rain) setRain(s.rain);
+        if (s.shot !== state.tour.shot) { state.tour.shot = s.shot; if (s.cue && people) people.force(s.cue[0], s.cue[1]); }
         if (s.caption !== caption.textContent) setCaption(s.caption, 99);
       }
     } else if (state.autoTime) state.tod = (state.tod + dt * 24 / DAY_SECONDS) % 24;
     cam.update(dt);
+    if (follow && people && !cam._fly) {
+      const p = people.locate(follow, people.time + acc, followPos);
+      if (!p) unfollow();
+      else { const k = 1 - Math.exp(-dt * 5); cam.cx += (p[0] - cam.cx) * k; cam.cy += (p[1] - cam.cy) * k; }
+    }
     updateEnv(dt);
     if (captionTimer > 0 && !state.tour) { captionTimer -= dt; if (captionTimer <= 0) caption.textContent = ''; }
   }
+  let lodF = 1;
   function draw() {
     const view = cam.view();
     const night = 1 - env.day;
-    R.begin();
+    R.begin(view);
     R.look = env.look;   // movers 가 룩 2 전조등 원뿔을 고른다
-    movers.emitPeople(R, state.time, night);
+    if (people) castDraw.emit(R, people, { alpha: acc / SIM_DT, view, cw: canvas.width, ch: canvas.height, season: state.season, rain: env.rain > 0.5, day: env.day });
+    else movers.emitPeople(R, state.time, night);
     movers.emitVehicles(R, traffic.vehicles, acc / SIM_DT, night);
     movers.emitSignals(R, traffic.signals);
     if (night > 0.02) movers.emitLamps(R, traffic.signals, R.look === 2);
-    birdView.day = env.day; birdView.F = R.pickF(view.scale);
+    birdView.day = env.day; birdView.F = R.F;
     emitBirds(R, birds, birdView);
     // 틸트시프트: 멀리·중간 배율에서만. 가까이 당기면(화면 1px 당 지도 1.3→2.8 px) 사라져 픽셀이 또렷하게 남는다.
     env.tilt = state.tilt ? 1 - smooth(1.3, 2.8, view.scale / cam.dpr) : 0;
     env.tiltR = 4.5 * cam.dpr;
     R.render(view, env);
+    if (R.F !== lodF) lodLive(lodF = R.F);   // 깊은 단계 표시(탭이 죽었다 다시 열리면 assets.js 가 단계를 낮춘다)
   }
   let last = performance.now(), running = true;
   function frame(now) {
@@ -415,18 +488,28 @@ async function boot() {
     };
   }
 
+  // 캡처: 버튼·글자 없이 지금 화면만. 아래 띠에 상시 표기 문구와 주소를 적는다(snap.js).
+  {
+    const nt = $('#notice').cloneNode(true);
+    nt.querySelector('.etc')?.remove();
+    initSnap($('#snap'), canvas, draw, { notice: nt.textContent.trim(), site: 'midagedev.github.io/seoul-miniature' });
+  }
   // ── 캡처·테스트용 수동 시계: __iso.manual(true) 후 __iso.step(dt) 로 한 프레임씩 결정론적으로 진행
   window.__iso = {
+    finds,
     state, cam, traffic, env, R,
     manual(on) { state.manual = on; last = performance.now(); },
     step(dt) { advance(dt); draw(); },
     startTour, stopTour, setSeason,
     tourLength: TOUR.total,
+    people, castDraw, castReg,
     birds, scareBirds: (x, y, r) => birds.scare(x, y, r), launchBirds: (i) => birds.launch(i),
     applyHash, hashNow,
   };
 
+  addEventListener('pagehide', () => lodLive(1));
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden) lodLive(1); else if (!lost) lodLive(lodF);
     if (document.hidden || running || lost) return;
     running = true; last = performance.now();
     requestAnimationFrame((t) => { last = t; frame(t); });

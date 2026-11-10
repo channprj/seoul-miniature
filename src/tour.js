@@ -12,14 +12,18 @@ export const PLACES = [
 ];
 
 // 각 샷: 시작/끝 카메라, 시각(tod), 계절(0 봄 1 여름 2 가을 3 겨울), 길이(초)
+// rain = 그 샷 동안 비, cue = 샷이 시작될 때 일으킬 사람 장면([종류, 몇 번째] → people.force). 사람 장면 좌표는 sim/people.js 시드 5 기준.
 const SHOTS = [
-  { d: 7, a: [1300, 900, 1650], b: [1260, 920, 1150], tod: [6.6, 8.4], season: 1, caption: '서울의 아침, 경복궁' },
-  { d: 7, a: [760, 1290, 330], b: [930, 1180, 250], tod: [8.5, 10], season: 1, caption: '광화문 앞, 출근길' },
-  { d: 7, a: [1150, 1020, 360], b: [1300, 840, 300], tod: [11, 12.5], season: 0, caption: '봄 — 근정전에서 경회루로' },
-  { d: 7, a: [1700, 720, 420], b: [1860, 640, 280], tod: [14, 15.5], season: 2, caption: '가을 — 향원정' },
-  { d: 7, a: [560, 600, 520], b: [700, 470, 360], tod: [16.5, 18.2], season: 2, caption: '해 질 녘의 서촌' },
-  { d: 8, a: [420, 1260, 520], b: [820, 1220, 330], tod: [18.6, 20.5], season: 3, caption: '겨울 저녁, 불이 켜지는 도심' },
-  { d: 9, a: [1240, 930, 520], b: [1300, 880, 1500], tod: [21, 23.2], season: 3, caption: '눈 내리는 밤의 경복궁' },
+  { d: 6, a: [1300, 900, 1650], b: [1260, 920, 1150], tod: [6.6, 8.4], season: 1, caption: '서울의 아침, 경복궁' },
+  { d: 6, a: [760, 1290, 330], b: [930, 1180, 250], tod: [8.5, 10.3], season: 1, caption: '광화문 앞, 출근길' },   // 10시를 지나며 교대 행렬이 나오기 시작한다
+  { d: 8, a: [870, 1205, 170], b: [840, 1190, 100], tod: [10.3, 11.2], season: 1, caption: '오전 10시, 수문장 교대' },
+  { d: 6, a: [1160, 1005, 150], b: [1258, 1018, 105], tod: [11.3, 11.9], season: 0, cue: ['classphoto', 0], caption: '봄 — 근정전 앞, 한복 나들이와 단체 사진' },
+  { d: 6, a: [1150, 1020, 360], b: [1300, 840, 300], tod: [12, 13.2], season: 0, caption: '봄 — 근정전에서 경회루로' },
+  { d: 6, a: [1700, 720, 420], b: [1860, 640, 280], tod: [14, 15.3], season: 2, caption: '가을 — 향원정' },
+  { d: 6, a: [930, 1200, 200], b: [885, 1168, 125], tod: [15.5, 16.3], season: 2, rain: true, caption: '가을비 — 우산 속 궁궐' },
+  { d: 6, a: [560, 600, 520], b: [700, 470, 360], tod: [16.6, 18.2], season: 2, caption: '해 질 녘의 서촌' },
+  { d: 7, a: [420, 1260, 520], b: [820, 1220, 330], tod: [18.6, 20.5], season: 3, caption: '겨울 저녁, 불이 켜지는 도심' },
+  { d: 8, a: [1240, 930, 520], b: [1300, 880, 1500], tod: [21, 23.2], season: 3, caption: '눈 내리는 밤의 경복궁' },
 ];
 let acc = 0;
 for (const s of SHOTS) { s.t0 = acc; acc += s.d; }
@@ -33,5 +37,5 @@ export function sampleTour(t) {
   const L = (i) => s.a[i] + (s.b[i] - s.a[i]) * u;
   // 줌은 로그 공간에서 보간해야 속도가 일정하게 느껴진다
   const vh = Math.exp(Math.log(s.a[2]) + (Math.log(s.b[2]) - Math.log(s.a[2])) * u);
-  return { x: L(0), y: L(1), vh, tod: s.tod[0] + (s.tod[1] - s.tod[0]) * ((t - s.t0) / s.d), season: s.season, caption: s.caption };
+  return { x: L(0), y: L(1), vh, tod: s.tod[0] + (s.tod[1] - s.tod[0]) * ((t - s.t0) / s.d), season: s.season, caption: s.caption, rain: !!s.rain, cue: s.cue || null, shot: SHOTS.indexOf(s) };
 }

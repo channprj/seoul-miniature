@@ -1,5 +1,6 @@
 // 시스템 Chrome(헤드리스)으로 앱 화면을 찍는다. 개발 서버가 떠 있어야 한다.
 //   node tools/shot.mjs <out.png> [query] [js-to-eval] [width] [height] [settleSeconds]
+// 환경 변수: DPR=2(기기 픽셀 비율), MOBILE=1(터치·모바일 에뮬레이션 → 앱이 휴대폰 경로로 뜬다), HASH='#x,y,vh'(주소 해시)
 import puppeteer from 'puppeteer-core';
 const [out, query = '', js = '', w = '1440', h = '900', settle = '2'] = process.argv.slice(2);
 const browser = await puppeteer.launch({
@@ -7,11 +8,12 @@ const browser = await puppeteer.launch({
   headless: 'new', args: ['--use-angle=metal', '--enable-webgl', '--ignore-gpu-blocklist', '--hide-scrollbars'],
 });
 const page = await browser.newPage();
-await page.setViewport({ width: Number(w), height: Number(h), deviceScaleFactor: 1 });
+const mobile = process.env.MOBILE === '1';
+await page.setViewport({ width: Number(w), height: Number(h), deviceScaleFactor: Number(process.env.DPR || 1), isMobile: mobile, hasTouch: mobile });
 const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
-await page.goto(`http://127.0.0.1:${process.env.PORT || 5173}/?${query}`, { waitUntil: 'load' });
+await page.goto(`http://127.0.0.1:${process.env.PORT || 5173}/?${query}${process.env.HASH || ''}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__iso || document.querySelector("#loading p").textContent.includes("못")', { timeout: 30000 });
 if (js) { const r = await page.evaluate(js); if (r !== undefined) console.log('eval →', JSON.stringify(r)); }
 await new Promise((r) => setTimeout(r, Number(settle) * 1000));

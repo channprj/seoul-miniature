@@ -102,15 +102,45 @@ export function pickResolution(gl = probeWebGL2()) {
   return 2;
 }
 
+// 배경 타일 피라미드(tools/redraw/make_tiles.py): redraw/tiles/manifest.json 이 있으면 바탕은 z1.png(0.5 m) 하나만 받고,
+// 확대하면 보이는 칸의 z2·z4·z8 타일을 받는다(데스크톱·휴대폰 같은 경로). 없으면 예전처럼 bg.png / bg_1x.png 통짜.
+//   ?tiles=0 끔, ?maxlod=1|2|4|8 가장 세밀한 단계 상한
+// 안전판(메모리가 빠듯한 휴대폰): 깊은 단계(z4·z8)를 그리던 중에 탭이 죽었거나(pagehide 없이 다시 열림) WebGL 컨텍스트를 잃었으면,
+// 이 탭에서는 다음부터 그보다 한 단계 얕게만 쓴다(sessionStorage). ?maxlod 를 주면 그 값이 우선.
+const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k); if (v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, String(v)); } catch { /* 사생활 보호 모드 */ } return null; };
+export function lodLive(F) { ss('iso-lod-live', F >= 4 ? F : null); }
+export function lodFailed(F) { if (F >= 4) ss('iso-lod-cap', F / 2); ss('iso-lod-live', null); }
+function lodCap() {
+  const live = Number(ss('iso-lod-live')) || 0;
+  let cap = Number(ss('iso-lod-cap')) || 8;
+  if (live >= 4) { cap = Math.min(cap, live / 2); ss('iso-lod-cap', cap); }
+  ss('iso-lod-live', null);
+  return cap;
+}
+async function tileManifest() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('tiles') === '0') return null;
+  try {
+    const raw = await bytes('redraw/tiles/manifest.json', { optional: true });
+    if (!raw) return null;
+    const m = JSON.parse(utf8(raw));
+    const cap = Number(q.get('maxlod')) || lodCap();
+    m.zs = Object.keys(m.levels).map(Number).filter((z) => z <= cap).sort((a, b) => a - b);
+    return m;
+  } catch { return null; }
+}
+
 export async function loadAssets(onProgress = () => {}, { res = pickResolution() } = {}) {
+  const man = await tileManifest();
   const names = {
     bg: res === 2 ? 'redraw/bg.png' : 'redraw/bg_1x.png',   // 5504×3392(0.25 m/px) 또는 휴대폰·저사양용 2752×1696
     depth: 'redraw/depth_rg8.png',       // 2752×1696, 외곽 OSM 건물까지 포함한 깊이
     cls: 'web-poc/occlusion_class8.png',
     sem: 'redraw/classes.png',
   };
+  if (man) names.bg = 'redraw/tiles/' + man.base;
   // 진행률: 항목별 대략 무게(바이트)로 가중. content-length 가 있으면 바이트 단위로 움직인다.
-  const W = { scene: 0.3, bg: res === 2 ? 5.5 : 1.6, depth: 1.7, cls: 0.25, sem: 0.4 };
+  const W = { scene: 0.3, bg: res === 2 && !man ? 5.5 : 1.6, depth: 1.7, cls: 0.25, sem: 0.4 };
   const frac = {};
   const report = () => {
     let s = 0, t = 0;
@@ -119,8 +149,8 @@ export async function loadAssets(onProgress = () => {}, { res = pickResolution()
   };
   const onBytes = (k) => (got, total) => { if (total) { frac[k] = Math.min(0.98, got / total); report(); } };
   const done = (k) => { frac[k] = 1; report(); };
-  // tiles: 절반 해상도 그림일 때 확대하면 원본 해상도 타일(redraw/tiles/)을 보이는 칸만 받아 쓴다. ?tiles=0 으로 끈다.
-  const out = { res, tiles: res === 1 && new URLSearchParams(location.search).get('tiles') !== '0' };
+  // tiles: 타일 피라미드 manifest(없으면 null). phone: 아틀라스·합성 창 크기 상한을 휴대폰 기준으로
+  const out = { res, tiles: man, phone: isPhone() };
   await Promise.all([
     sceneJson(onBytes('scene')).then((s) => { out.scene = s; done('scene'); }),
     ...Object.keys(names).map((k) => image(names[k], onBytes(k)).then((im) => { out[k] = im; done(k); })),
