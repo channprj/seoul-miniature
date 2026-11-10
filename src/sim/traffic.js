@@ -53,9 +53,9 @@ const KIND_WEIGHTS = [
   ['taxi', 61],
   ['van', 43],
 ];
-// 버스 노선(primary·secondary 만 지나는 경로, 전체 경로의 약 1/6) 위 버스 비율. 110~150 대에서
-// 지도 위 버스 평균 4~6 대, 전체 차량 중 약 4 %
-const BUS_SHARE_ON_BUS_ROUTES = 0.25;
+// 버스 노선(primary·secondary 만 지나는 경로, 전체 경로의 약 1/6) 위 버스 비율. 150~230 대에서
+// 지도 위 버스 평균 17~20 대, 생성 차량 중 약 12 %
+const BUS_SHARE_ON_BUS_ROUTES = 0.75;
 // 긴 차(버스)의 축간 거리 = len·2·AXLE. 앞뒤 축이 경로 위에 있고 차체는 두 축을 잇는 선 위:
 // 굽은 길에서 끝단은 바깥, 가운데는 안쪽으로 벗어난다. len/√2 이면 양쪽 최대 이탈이 비슷해진다
 // (중심을 경로에 둘 때의 약 1.0 m -> 0.6 m).
@@ -1711,7 +1711,8 @@ export function createTraffic(scene, opts = {}) {
     const idm = (gap, dv, s0) => idmAcc(v.v, vd, A, T, gap, dv, s0);
     const prevWhy = v._why;
     const yb = v._yb;
-    if (yb && (yb._dead || yb._r - v._ybR > yb.len + YIELD_CLEAR)) v._yb = null;
+    // 버스가 (사슬을 타고) 나를 기다리게 되면 양보를 푼다 (서로 기다림 방지)
+    if (yb && (yb._dead || waitsFor(yb, v) || yb._r - v._ybR > yb.len + YIELD_CLEAR)) v._yb = null;
     v._why = 'free';
 
     const gap = findLeader(v);

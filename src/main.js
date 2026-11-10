@@ -105,7 +105,7 @@ async function boot() {
   let traffic, trafficKind = 'live';
   try {
     const mod = await import('./sim/traffic.js');
-    traffic = mod.createTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || 150) });   // 도심답게 막히지만 흐르는 수준(교착·강제 제거 0 확인)
+    traffic = mod.createTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || 190) });   // 도심답게 막히지만 흐르는 수준(교착·강제 제거 0 확인)
   } catch (e) {
     console.warn('교통 sim 을 불러오지 못해 단순 대체를 씁니다:', e);
     traffic = createFallbackTraffic(scene); trafficKind = 'fallback';
