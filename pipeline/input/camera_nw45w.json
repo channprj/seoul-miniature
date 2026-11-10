@@ -1,0 +1,55 @@
+{
+ "name": "nw45w",
+ "yaw_deg": 45.0,
+ "elevation_deg_from_horizontal": 35.0,
+ "blender_rot_x_deg": 55.0,
+ "note": "orthographic, looks NW (yaw 45), 35 deg above horizontal; not true isometric",
+ "res": [
+  2752,
+  1696
+ ],
+ "m_per_px_screen": 0.5,
+ "fit_rect_local": [
+  -380.0,
+  -150.0,
+  420.0,
+  980.0
+ ],
+ "cx": 313.34269712367905,
+ "cy": 187.34132336131108,
+ "cam_location": [
+  1593.65478515625,
+  -1150.521240234375,
+  1587.4022216796875
+ ],
+ "view_dir": [
+  -0.5792279839515686,
+  0.5792279243469238,
+  -0.5735764503479004
+ ],
+ "screen_x_axis": [
+  0.7071067690849304,
+  0.7071067690849304,
+  0.0
+ ],
+ "screen_y_axis": [
+  -0.4055798053741455,
+  0.4055797755718231,
+  0.8191520571708679
+ ],
+ "local_origin_epsg5186": [
+  197940.46660081236,
+  552912.2911692131
+ ],
+ "old_image_offset_px": [
+  291,
+  -69
+ ],
+ "old_frame_origin_note": "old three-hour local origin (197990.47,553372.29) = new local (50,460); old px of it (1179.5635,959.1072)",
+ "projection": "px=(P.ex-cx)/PX+W/2; py=H/2-(P.ey-cy)/PX; depth=(P-cam_location).view_dir",
+ "sun_euler_deg": [
+  50,
+  0,
+  -28
+ ]
+}

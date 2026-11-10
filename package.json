@@ -1,0 +1,13 @@
+{
+  "name": "seoul-miniature",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node serve.mjs 5173",
+    "test": "node --test",
+    "shot": "node tools/shot.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "25.16.0"
+  }
+}

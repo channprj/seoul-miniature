@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>서울 미니어처 — 경복궁</title>
+<meta name="description" content="실제 지도 배치 그대로 옮긴 경복궁 일대 픽셀아트 미니어처. 시간·계절·날씨가 바뀌고 사람과 차가 움직입니다.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="경복궁, 살아 있는 미니어처">
+<meta property="og:description" content="실제 지도 배치 그대로 옮긴 경복궁 일대 픽셀아트 미니어처. 시간·계절·날씨가 바뀌고 사람과 차가 움직입니다.">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:url" content="https://midagedev.github.io/seoul-miniature/">
+<meta property="og:image" content="https://midagedev.github.io/seoul-miniature/og.png">
+<meta name="twitter:image" content="https://midagedev.github.io/seoul-miniature/og.png">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="look2">
+<canvas id="c" aria-label="경복궁과 주변 서울 도심의 픽셀아트 미니어처"></canvas>
+<div id="vignette"></div>
+
+<header id="title">
+  <div class="eyebrow">SEOUL · MINIATURE</div>
+  <h1>경복궁, 살아 있는 미니어처</h1>
+  <p id="caption">드래그로 이동 · 휠로 확대</p>
+</header>
+
+<nav id="places" aria-label="장소 바로가기"></nav>
+
+<section id="dock" aria-label="시간과 계절">
+  <button id="play" class="icon" title="시간 흐름 켜기/끄기" aria-pressed="true"></button>
+  <div id="clock">09:00</div>
+  <input id="tod" type="range" min="0" max="24" step="0.01" value="9" aria-label="시각">
+  <div id="seasons" role="group" aria-label="계절">
+    <button data-s="0">봄</button><button data-s="1" class="on">여름</button><button data-s="2">가을</button><button data-s="3">겨울</button>
+  </div>
+  <button id="rain" class="chip" aria-pressed="false">비</button>
+  <button id="tilt" class="chip" aria-pressed="true" title="위·아래 가장자리를 흐리게(미니어처 사진 느낌)">미니어처</button>
+  <button id="look" class="chip" aria-pressed="true" title="눌림 = 세련된 픽셀아트(기본), 해제 = 예전 룩">룩</button>
+  <button id="tour" class="primary">둘러보기</button>
+</section>
+
+<footer id="foot">
+  <button id="about">출처 · 라이선스</button>
+  <button id="verify">검증 도구</button>
+  <button id="share" title="지금 보는 위치·계절을 담은 주소 복사">링크 복사</button>
+  <button id="sound" title="배경음 켜기/끄기" aria-pressed="false" hidden><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z" fill="currentColor"/><path class="wave" d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.8a6 6 0 0 1 0 8.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path class="mute" d="M11 6l4 4M15 6l-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>소리</button>
+  <span id="notice">지도 데이터 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a><span class="more"> · Overture Maps · 국토교통부 · 국가유산청(공공누리 1유형)</span><span class="etc"> 외 · 자세히는 「출처」</span></span>
+</footer>
+
+<aside id="hud" hidden></aside>
+
+<div id="panel" hidden>
+  <div class="card">
+    <button class="close" aria-label="닫기">×</button>
+    <div id="panel-body"></div>
+  </div>
+</div>
+
+<div id="loading"><div class="bar"><i></i></div><p>미니어처를 펼치는 중…</p></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

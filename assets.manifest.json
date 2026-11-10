@@ -1,0 +1,14 @@
+{
+ "note": "assets/ \uae30\uc900 \uacbd\ub85c\uc640 sha256. npm test \uac00 \uac80\uc0ac\ud55c\ub2e4.",
+ "files": {
+  "audio/bgm.mp3": "e4764c64da7095adb9934507fa497456a17767664aa680d62ef864002fff70a3",
+  "audio/bgm_night.mp3": "266ba48cdefa260bce57426162b8fb0cc25c947d03b98fec8cd0bf24ec452a0c",
+  "redraw/bg.png": "77e6c407cbc148ae893c13e94f9414a68c37ba7712ab0f03b2f0233c8bc1ef23",
+  "redraw/bg_1x.png": "bb128d1eee17257e03e2359b8d51f4d57b0bf4e3f2bda17192896f4db5a577f2",
+  "redraw/classes.png": "de4311f2290eda50478f9b962234599ecfaa1c2df907689f0630955c44a9674e",
+  "redraw/depth_rg8.png": "8ca75c2543f210bb757f35fa22316e22e1c9d9919400648cbe047c9a0e1ff86b",
+  "web-poc/occlusion_class8.png": "f71d2cb43c9f7c758ffd246bd9a20d76705ec746c3b48999529566cc76bb47d1",
+  "web-poc/scene.json": "918ba6a22e952ec7a4debe1a39ce1fd7992650595c1faa70cbadc19af26297f6",
+  "web-poc/scene.json.gz": "3a2eb860ff0d4b4adc04bb24d02d47285130b643ec8ed49312f9e1eceac8c164"
+ }
+}
