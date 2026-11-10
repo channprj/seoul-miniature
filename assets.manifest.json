@@ -1,7 +1,7 @@
 {
  "note": "assets/ \uae30\uc900 \uacbd\ub85c\uc640 sha256. npm test \uac00 \uac80\uc0ac\ud55c\ub2e4.",
  "files": {
-  "audio/bgm.mp3": "b9f89195b59a81dbaeec6cc7b9232b3eaba04331313cce5f1622d5128f629b0e",
+  "audio/bgm.mp3": "aea2c68d680f2e79f57a716762405213e1b1ef4e1d74ff5c4ca7b402a2567899",
   "audio/bgm_night.mp3": "a3c1c6e73b349bcd385f897c0b0283255a2e6c3a2c6cdeb09155be0eb888c345",
   "redraw/bg.png": "7da62dd289d53dc5a783c93b92bdb7e1eadf6232168e56897298202c4f006f6e",
   "redraw/bg_1x.png": "156a62f1cb5317b90b9413fc19d0925efeb884d617ec02d93096d3f9f32ac7ec",
