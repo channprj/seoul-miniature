@@ -1,11 +1,15 @@
 // 카메라 투영(정사투영 NW45/35°, 0.5 m/px). 식의 정의는 장면 데이터의 camera 항목에 있다.
-export function makeProjection(cam) {
+// occ = 장면의 occlusion 항목(D0_m, step_m): 지도마다 깊이 맵의 기준값·단위가 다르다(경복궁 2060 + v×0.02).
+// ps = 픽셀 크기로 그린 것(사람·새 스프라이트, 빛 반경)의 배율. 0.5 m/px 지도가 기준 1, 1 m/px 지도는 0.5.
+export function makeProjection(cam, occ = {}) {
   const [W, H] = cam.res;
   const m = cam.m_per_px_screen;
+  const D0 = Number.isFinite(occ.D0_m) ? occ.D0_m : 2060, dstep = Number.isFinite(occ.step_m) ? occ.step_m : 0.02;
   const ex = cam.screen_x_axis, ey = cam.screen_y_axis, vd = cam.view_dir, cl = cam.cam_location;
   const camDotVd = cl[0] * vd[0] + cl[1] * vd[1] + cl[2] * vd[2];
   return {
-    W, H, m, ex, ey, vd, cx: cam.cx, cy: cam.cy, camDotVd,
+    W, H, m, ex, ey, vd, cx: cam.cx, cy: cam.cy, camDotVd, D0, dstep, ps: 0.5 / m,
+    decodeDepth: (r, g) => decodeDepth(r, g, D0, dstep),
     // 로컬 (x,y,z) m → out[0]=px, out[1]=py (연속 좌표), out[2]=깊이 m
     project(x, y, z, out) {
       out[0] = (x * ex[0] + y * ex[1] + z * ex[2] - cam.cx) / m + W / 2;

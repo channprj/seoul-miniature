@@ -4,10 +4,12 @@
 import { hash01 } from './geom.js';
 
 // 광화문·근정전·경회루(tour.js PLACES 좌표): 가까운 궁궐 벽 밑동은 아래에서 위로 씻는 업라이트로 키운다
-const LANDMARKS = [[850, 1225, 70], [1215, 985, 80], [1275, 800, 70]];
+const GB_UPLIGHTS = [[850, 1225, 70], [1215, 985, 80], [1275, 800, 70]];
 
 // palace: 궁궐 로컬 경계 [x0, y0, x1, y1](m). proj 로 지도 px → 지면(z=0) 로컬 좌표를 구해 골목등을 궁 안에서 뺀다.
-export function buildStaticLights({ w, h, cls }, lamps, proj, palace) {
+// uplights: 업라이트를 줄 자리 [x, y, 반경](지도 px). 지도 설정(maps.js)에서 온다. 안 주면 경복궁 값.
+export function buildStaticLights({ w, h, cls }, lamps, proj, palace, uplights = GB_UPLIGHTS) {
+  const LANDMARKS = uplights || [];
   const inPalace = (x, y) => {
     if (!proj || !palace) return false;
     const u = (x + 0.5 - proj.W / 2) * proj.m + proj.cx, v = (proj.H / 2 - y - 0.5) * proj.m + proj.cy;

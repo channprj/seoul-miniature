@@ -69,7 +69,8 @@ export function* hiSpritesSteps(scene, proj, SS) {
     }
   }
   // ── 사람(z2 px 4×9 → 4k × 9k)
-  const k = SS / 2;
+  // 1 m/px 지도(proj.ps 0.5)에서는 사람·새를 절반 크기로: 같은 SS 에서 칸이 절반이다
+  const k = Math.max(1, Math.round(SS / 2 * (proj.ps || 1)));
   const PW = 4 * k, PH = 9 * k;
   const pal = scene.walker_palette;
   const people = new Array(pal.length);

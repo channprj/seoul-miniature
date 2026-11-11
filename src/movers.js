@@ -64,7 +64,9 @@ export function createMovers(scene, proj) {
   }
 
   function emitPeople(R, t, nightAmt) {
-    const SS = SPRITE_SCALE, fw = PERSON.w / SS, fh = PERSON.h / SS, foot = (PERSON.h - 1) / SS;
+    // PSC: 1 m/px 지도에서는 사람을 지도 px 로 절반 크기로 그린다(키 2.25 m 는 같다). 아틀라스 배율은 렌더러가 맞춘다.
+    const PSC = proj.ps || 1;
+    const SS = SPRITE_SCALE, fw = PERSON.w / SS * PSC, fh = PERSON.h / SS * PSC, foot = (PERSON.h - 1) / SS * PSC;
     const keep = 1 - nightAmt * 0.72;          // 밤에는 사람이 줄어든다
     // 깊은 단계(R.hi: 0.125·0.0625 m 아틀라스)면 그 해상도로 그린 사람을 쓰고 위치도 그 격자에 맞춘다(크기·발 위치는 같다)
     const hi = R.hi, q = hi ? hi.SS : SS;
@@ -74,7 +76,7 @@ export function createMovers(scene, proj) {
       const c = hi && hi.people[pal] && hi.people[pal][pose];   // 깊은 판이 없는 팔레트·자세는 기본 아틀라스로(kind 1)
       if (c) R.sprite(dx, dy, fw, fh, c[0], c[1], S[2], 10, foot);
       else R.sprite(dx, dy, fw, fh, (pal % PERSON.perRow) * PERSON.cellW * 4 + pose * PERSON.cellW, Math.floor(pal / PERSON.perRow) * PERSON.cellH, S[2], 1, foot);
-      R.shadow(dx, dy + foot, fw + 0.5, 0.5, 0, 0, S[2], 3);
+      R.shadow(dx, dy + foot, fw + 0.5 * PSC, 0.5 * PSC, 0, 0, S[2], 3);
     };
     for (let i = 0; i < walkers.length; i++) {
       const w = walkers[i];

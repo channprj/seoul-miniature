@@ -16,7 +16,7 @@ const MAX_FETCH = 6, MAX_UPLOAD = 4, RETRY_MS = 3000, UP_FRAMES = 6, LOOKAHEAD =
 export function createBgTiles(gl, W, H, man, { phone = false, load } = {}) {
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const SX = phone || maxTex < 4096 ? 8 : 16, SY = phone || maxTex < 4096 ? 12 : 16, SLOTS = SX * SY;
-  load ||= (z, tx, ty) => optionalImage(`redraw/tiles/z${z}_${tx}_${ty}.${man.levels[z].format || 'png'}`);
+  load ||= (z, tx, ty) => optionalImage(`${man.dir || 'redraw/tiles/'}z${z}_${tx}_${ty}.${man.levels[z].format || 'png'}`);
   const mk = (w, h) => {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);

@@ -28,7 +28,7 @@
 
 | 파일 | 내용 |
 |---|---|
-| `assets/redraw/bg.png` | 배경 그림 5504×3392(0.25 m/px), 96색 인덱스 PNG |
+| `assets/redraw/bg.png` | 배경 그림 5504×3392(0.25 m/px), 128색 인덱스 PNG |
 | `assets/redraw/bg_1x.png` | 절반 해상도 판(WebGL2 를 못 쓸 때의 정지 그림이기도 함) |
 | `assets/redraw/tiles/` | 타일 피라미드. `z1.png`(2752×1696 바탕) + `z2/`·`z4/`·`z8/` 256px 타일(`z/x_y.png`) + `manifest.json`. z8 은 0.0625 m/px. 한 색으로만 찬 타일은 파일 없이 목록에 색만 적음 |
 | `assets/redraw/depth_rg8.png` | 깊이. `depth_m = 2060 + (R·256 + G) × 0.02`, 65535 는 없음 |

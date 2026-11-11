@@ -4,6 +4,8 @@
 // createImageBitmap 옵션을 못 받으면 옵션 없이 → 그것도 없으면 <img>.
 import { gunzip } from './gunzip.js';
 import { decodePng } from './png.js';
+import { currentMap } from './maps.js';
+import { sceneFromMap } from './mapscene.js';
 
 const BASE = 'assets/';   // 상대 경로: github.io 의 하위 경로에서도 동작
 const emb = () => globalThis.__ISO_ASSETS__;
@@ -70,12 +72,14 @@ export const optionalImage = (name) => image(name, undefined, true);
 
 const utf8 = (u8) => new TextDecoder().decode(u8);
 // 장면: 공개 배포본에는 비압축 scene.json 이 같이 들어간다. 개발 폴더·오프라인 HTML 에는 gz 만 있다.
-async function sceneJson(onBytes) {
+// 지도 설정에 map(지도 고유 값 파일, 예: yeouido/map.json)이 있으면 그것을 장면 모양으로 바꾼다(mapscene.js).
+async function sceneJson(onBytes, map) {
+  if (map.map) return sceneFromMap(JSON.parse(utf8(await bytes(`${map.dir}/${map.map}`, { onBytes }))));
   try {
-    const raw = await bytes('web-poc/scene.json', { optional: true, onBytes });
+    const raw = await bytes(map.scene, { optional: true, onBytes });
     if (raw) return JSON.parse(utf8(raw));
   } catch { /* file:// 등에서 fetch 자체가 실패 → gz 로 */ }
-  const gz = await bytes('web-poc/scene.json.gz', { onBytes });
+  const gz = await bytes(map.scene + '.gz', { onBytes });
   if (typeof DecompressionStream === 'function') {
     try {
       const ds = new Blob([gz]).stream().pipeThrough(new DecompressionStream('gzip'));
@@ -130,30 +134,38 @@ function lodCap() {
   ss('iso-lod-live', null);
   return cap;
 }
-async function tileManifest() {
+async function tileManifest(dir) {
   const q = new URLSearchParams(location.search);
   if (q.get('tiles') === '0') return null;
   try {
-    const raw = await bytes('redraw/tiles/manifest.json', { optional: true });
+    const raw = await bytes(dir + '/tiles/manifest.json', { optional: true });
     if (!raw) return null;
     const m = JSON.parse(utf8(raw));
     const cap = Number(q.get('maxlod')) || lodCap();
+    m.dir = dir + '/tiles/';   // 타일 파일 폴더(bgtiles.js)
     m.zs = Object.keys(m.levels).map(Number).filter((z) => z <= cap).sort((a, b) => a - b);
     return m;
   } catch { return null; }
 }
 
-export async function loadAssets(onProgress = () => {}, { res = pickResolution() } = {}) {
-  const man = await tileManifest();
+export async function loadAssets(onProgress = () => {}, { res = pickResolution(), map = currentMap() } = {}) {
+  // 정식 폴더에 지도 값 파일이 없고 개발용 임시 폴더가 있으면 그쪽으로(개발 서버 전용)
+  if (map.map && map.devDir && !emb()) {
+    const probe = await bytes(`${map.dir}/${map.map}`, { optional: true }).catch(() => null);
+    if (!probe) { console.warn(`${map.dir}/${map.map} 이 없어 임시 세트 ${map.devDir} 를 씁니다`); map = { ...map, dir: map.devDir }; }
+  }
+  const D = map.dir;
+  const man = await tileManifest(D);
   const names = {
-    bg: res === 2 ? 'redraw/bg.png' : 'redraw/bg_1x.png',   // 5504×3392(0.25 m/px) 또는 휴대폰·저사양용 2752×1696
-    depth: 'redraw/depth_rg8.png',       // 2752×1696, 외곽 OSM 건물까지 포함한 깊이
-    cls: 'web-poc/occlusion_class8.png',
-    sem: 'redraw/classes.png',
+    bg: res === 2 ? `${D}/bg.png` : `${D}/bg_1x.png`,   // 5504×3392(지도 px 의 2배) 또는 휴대폰·저사양용 2752×1696
+    depth: `${D}/depth_rg8.png`,         // 2752×1696 깊이(디코드 상수는 장면 데이터의 occlusion)
+    sem: `${D}/classes.png`,
   };
-  if (man) names.bg = 'redraw/tiles/' + man.base;
+  if (map.cls) names.cls = map.cls;      // 가림 판정 클래스(검증 오버레이). 없는 지도는 렌더러가 의미 클래스로 대신한다
+  if (man) names.bg = D + '/tiles/' + man.base;
   // 진행률: 항목별 대략 무게(바이트)로 가중. content-length 가 있으면 바이트 단위로 움직인다.
   const W = { scene: 0.3, bg: res === 2 && !man ? 5.5 : 1.6, depth: 1.7, cls: 0.25, sem: 0.4 };
+  if (!names.cls) delete W.cls;
   const frac = {};
   const report = () => {
     let s = 0, t = 0;
@@ -163,19 +175,19 @@ export async function loadAssets(onProgress = () => {}, { res = pickResolution()
   const onBytes = (k) => (got, total) => { if (total) { frac[k] = Math.min(0.98, got / total); report(); } };
   const done = (k) => { frac[k] = 1; report(); };
   // tiles: 타일 피라미드 manifest(없으면 null). phone: 아틀라스·합성 창 크기 상한을 휴대폰 기준으로
-  const out = { res, tiles: man, phone: isPhone() };
+  const out = { res, tiles: man, phone: isPhone(), map, cls: null };
   await Promise.all([
-    sceneJson(onBytes('scene')).then((s) => { out.scene = s; done('scene'); }),
+    sceneJson(onBytes('scene'), map).then((s) => { out.scene = s; done('scene'); }),
     // 수관 마스크(선택): 다시 그린 그림의 실제 나무 자리. 없으면 클래스 맵의 수목 칸을 그대로 쓴다
-    dataMap('redraw/crown.png', undefined, true).then((m) => { out.crown = m && m.width === 2752 ? m : null; }, () => { out.crown = null; }),
+    dataMap(`${D}/crown.png`, undefined, true).then((m) => { out.crown = m && m.width === 2752 ? m : null; }, () => { out.crown = null; }),
     ...Object.keys(names).map((k) => (k === 'bg' ? image : dataMap)(names[k], onBytes(k)).then((im) => { out[k] = im; done(k); })),
   ]);
   return out;
 }
 
 // WebGL2 가 없을 때 보여 줄 정지 그림 주소(오프라인 HTML 이면 내장 base64)
-export function stillUrl() {
-  const e = emb(), n = 'redraw/bg_1x.png';
+export function stillUrl(map = currentMap()) {
+  const e = emb(), n = `${map.dir}/bg_1x.png`;
   if (e && e[n]) return 'data:image/png;base64,' + e[n];
   return BASE + n;
 }

@@ -1,11 +1,12 @@
 import { buildVehicleAtlas } from './vehicles.js';
 import { loadAssets, probeWebGL2, pickResolution, stillUrl, lodLive, lodFailed } from './assets.js';
-import { makeProjection, decodeDepth } from './geom.js';
+import { makeProjection } from './geom.js';
 import { createRenderer } from './render.js';
 import { hiSpritesSteps } from './hisprites.js';
 import { createMovers, createFallbackTraffic, buildPeopleAtlas } from './movers.js';
 import { createCamera } from './camera.js';
-import { PLACES, TOUR, sampleTour } from './tour.js';
+import { makeTour } from './tour.js';
+import { publicMaps, currentMap, mapUrl, resolveView, resolveBox, resolveShots } from './maps.js';
 import { aboutHtml, verifyHtml } from './panels.js';
 import { initSnap } from './snap.js';
 import { createFinds } from './finds.js';
@@ -18,6 +19,7 @@ import { buildCast, extendPeopleAtlas, withCastHi, createCastDraw } from './emot
 const $ = (s) => document.querySelector(s);
 const canvas = $('#c');
 const params = new URLSearchParams(location.search);
+const MAP = currentMap();   // 지도 설정(maps.js): ?map=yeouido
 const SIM_DT = 1 / 30;
 const LOOK0 = params.get('look') === '1' ? 1 : 2;   // 기본 룩 2(세련된 픽셀아트), ?look=1 = 예전 룩
 const DAY_SECONDS = 150;                 // 자동 흐름에서 하루가 지나는 실제 시간
@@ -50,7 +52,7 @@ function showStill(reason) {
   document.body.classList.add('still');
   const d = document.createElement('div');
   d.id = 'still';
-  d.innerHTML = '<div class="scroll"><img alt="경복궁 일대 픽셀아트 미니어처 정지 그림"></div>' +
+  d.innerHTML = `<div class="scroll"><img alt="${MAP.label} 일대 픽셀아트 미니어처 정지 그림"></div>` +
     '<div class="card"><h2>움직이는 미니어처를 띄우지 못했습니다</h2><p></p><div class="row"><button class="primary">다시 시도</button></div></div>';
   d.querySelector('p').textContent = `${reason} 대신 정지 그림을 보여 드립니다. 최신 Safari·Chrome 에서 열면 시간·계절이 바뀌고 차와 사람이 움직입니다.`;
   d.querySelector('button').onclick = () => location.reload();
@@ -71,19 +73,24 @@ async function boot() {
   // 무거운 그림을 받기 전에 WebGL2 부터 확인한다
   const gl = probeWebGL2();
   if (!gl) throw new NoWebGL('이 브라우저에서는 WebGL2 를 쓸 수 없습니다.');
-  const assets = await loadAssets((p) => { bar.style.width = `${Math.round(p * 100)}%`; }, { res: pickResolution(gl) });
+  const assets = await loadAssets((p) => { bar.style.width = `${Math.round(p * 100)}%`; }, { res: pickResolution(gl), map: MAP });
   const scene = assets.scene;
-  const proj = makeProjection(scene.camera);
+  const proj = makeProjection(scene.camera, scene.occlusion);
+  // 바로가기·투어: 장면 데이터에 랜드마크 앵커가 있으면(여의도 map.json) 그 좌표를 쓴다
+  // 자리(바로가기·둘러보기·첫 화면)는 장면 데이터의 랜드마크 이름으로 푼다 → 그림을 다시 구워 좌표가 바뀌어도 코드는 그대로
+  const SIZE = [proj.W, proj.H], view = (v) => resolveView(v, scene.anchors, SIZE);
+  const PLACES = MAP.places.map((p) => { if (p.x !== undefined && !(p.key && scene.anchors && scene.anchors[p.key])) return p; const [x, y, vh] = view({ at: p.key || p.at, vh: p.vh }); return { ...p, x, y, vh }; });
+  const TOUR = makeTour(resolveShots(MAP.shots, scene.anchors, SIZE)), sampleTour = (t) => TOUR.sample(t);
   // 사람 유형·소품(emotes.js): 옷 색을 팔레트 뒤에 덧붙이고, 전용 모형 칸을 기본 사람 아틀라스 아래에 붙인다
-  addCast(scene);
-  const castReg = buildCast(scene);
-  assets.people = extendPeopleAtlas(buildPeopleAtlas(scene.walker_palette), castReg);
+  // 사람 행동(sim/people.js)을 쓰지 않는 지도는 걷는 사람만: 기본 아틀라스 그대로
+  const castReg = MAP.people ? (addCast(scene), buildCast(scene)) : null;
+  assets.people = castReg ? extendPeopleAtlas(buildPeopleAtlas(scene.walker_palette), castReg) : buildPeopleAtlas(scene.walker_palette);
   // 차량 스프라이트는 코드로 그린다(배경과 같은 픽셀 격자). 교통 sim 이 쓰는 차종·색 조합은 그대로 둔다.
   const va = buildVehicleAtlas(scene, proj);
   assets.veh = va.veh; assets.vehDepth = va.vehDepth; assets.vehShadow = va.vehShadow;
   scene.vehicle_atlas = { ...scene.vehicle_atlas, frames: va.frames };
   let R;
-  try { R = createRenderer(canvas, assets, proj, { look: LOOK0, hiSprites: (SS) => withCastHi(hiSpritesSteps(scene, proj, SS), castReg, SS) }); } catch (e) { console.error(e); throw new NoWebGL('그래픽(WebGL2) 화면을 만들지 못했습니다.'); }
+  try { R = createRenderer(canvas, assets, proj, { look: LOOK0, hiSprites: (SS) => (castReg ? withCastHi(hiSpritesSteps(scene, proj, SS), castReg, SS) : hiSpritesSteps(scene, proj, SS)) }); } catch (e) { console.error(e); throw new NoWebGL('그래픽(WebGL2) 화면을 만들지 못했습니다.'); }
   // 메모리가 모자라면 iOS·안드로이드가 컨텍스트를 빼앗는다. 복구는 새로고침뿐이라 안내만 띄운다.
   let lost = false;
   canvas.addEventListener('webglcontextlost', (e) => {
@@ -92,7 +99,7 @@ async function boot() {
   });
   const movers = createMovers(scene, proj);
   let people = null;   // 사람들의 행동(sim/people.js). 못 만들면 예전처럼 movers 가 걷는 사람만 그린다.
-  const castDraw = createCastDraw(scene, proj);
+  const castDraw = castReg ? createCastDraw(scene, proj) : null;
   // 새: classes.png 로 앉을 곳·돌 곳을 고정 시드로 고른다. 깊이는 앉는 자리에서만 읽고 버린다.
   const birds = (() => {
     const W = assets.sem.width, H = assets.sem.height, sp = readPixels(assets.sem);
@@ -103,10 +110,12 @@ async function boot() {
     let dp = readPixels(assets.depth);
     const DW = assets.depth.width;
     const groundAt = (y) => -((proj.H / 2 - y) * proj.m + proj.cy) * proj.ey[2] / proj.vd[2] - proj.camDotVd;
-    const depthAt = (x, y) => { const o = (y * DW + x) * 4, d = decodeDepth(dp[o], dp[o + 1]); return Number.isFinite(d) ? d : groundAt(y + 0.5); };
-    R.setStaticLights(buildStaticLights({ w: W, h: H, cls }, movers.lamps, proj, [-258.6, 12.2, 297.3, 878.1]));   // 룩 2 야간 정적 광원
-    const b = createBirds({ w: W, h: H, cls }, { seed: Number(params.get('birdseed') || 11), depthAt });
-    try {
+    const depthAt = (x, y) => { const o = (y * DW + x) * 4, d = proj.decodeDepth(dp[o], dp[o + 1]); return Number.isFinite(d) ? d : groundAt(y + 0.5); };
+    R.setStaticLights(buildStaticLights({ w: W, h: H, cls }, movers.lamps, proj, MAP.palace, MAP.uplights));   // 룩 2 야간 정적 광원
+    // 새·사람 행동은 지도 설정으로 켠다(경복궁 전용 장면 좌표에 기대는 것들). 끈 지도는 빈 새 떼, 걷는 사람만.
+    const b = MAP.birds ? createBirds({ w: W, h: H, cls }, { seed: Number(params.get('birdseed') || 11), depthAt })
+      : { birds: [], step() {}, scare() {}, launch() {}, off: true };
+    if (MAP.people) try {
       people = createPeople(scene, { w: W, h: H, cls }, { seed: Number(params.get('peopleseed') || params.get('seed') || 5), birds: b, proj,
         heightAt: (x, y) => (groundAt(y + 0.5) - depthAt(x, y)) * -proj.vd[2] });
     } catch (e) { console.warn('사람 행동을 만들지 못해 걷는 사람만 그립니다:', e); }
@@ -120,7 +129,11 @@ async function boot() {
   let traffic, trafficKind = 'live';
   try {
     const mod = await import('./sim/traffic.js');
-    traffic = mod.createTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || 190) });   // 도심답게 막히지만 흐르는 수준(교착·강제 제거 0 확인)
+    if (MAP.traffic === 'simple') {
+      // 신호·정지선 데이터가 없는 지도: 차로를 따라 달리는 단순 교통(sim/simple-traffic.js)
+      traffic = (await import('./sim/simple-traffic.js')).createSimpleTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || MAP.cars) });
+      trafficKind = 'simple';
+    } else traffic = mod.createTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || MAP.cars) });   // 도심답게 막히지만 흐르는 수준(교착·강제 제거 0 확인)
   } catch (e) {
     console.warn('교통 sim 을 불러오지 못해 단순 대체를 씁니다:', e);
     traffic = createFallbackTraffic(scene); trafficKind = 'fallback';
@@ -141,6 +154,22 @@ async function boot() {
   state.seasonW[state.season] = 1;
 
   // ── UI
+  // 지도 이름을 제목·접근성 문구에 넣고, 지도 전환 버튼(경복궁 / 여의도)을 만든다. 누르면 그 지도 주소로 다시 연다.
+  document.title = MAP.docTitle; $('#title h1').textContent = MAP.h1; canvas.setAttribute('aria-label', MAP.canvasLabel);
+  const mapsNav = $('#maps');
+  // 버튼에 나오는 지도 = 공개 지도(+ 지금 보고 있는 비공개 지도: 로컬 개발). 오프라인 단일 HTML 에는 기본 지도 자산만 들어 있다. 하나뿐이면 버튼을 만들지 않는다.
+  const mapList = [...new Set([...publicMaps(), MAP])].filter((m) => !globalThis.__ISO_ASSETS__ || m.id === MAP.id);
+  if (mapsNav && mapList.length < 2) mapsNav.hidden = true;
+  if (mapsNav && mapList.length > 1) for (const m of mapList) {
+    const b = document.createElement('button');
+    b.textContent = m.label; b.dataset.map = m.id;
+    b.setAttribute('aria-pressed', String(m.id === MAP.id));
+    if (m.id !== MAP.id) b.onclick = () => { location.href = mapUrl(m.id, location.href); };
+    mapsNav.appendChild(b);
+  }
+  if (!MAP.finds) $('#finds').hidden = true;   // 찾아보기 장면은 사람 행동이 있는 지도에만
+  // 화면 하단 상시 표기: 이 지도에 쓴 자료만(여의도는 OpenStreetMap 뿐)
+  if (MAP.noticeMore !== undefined) { const more = $('#notice .more'), etc = $('#notice .etc'); if (more) more.textContent = MAP.noticeMore; if (etc && !MAP.noticeMore) etc.textContent = ' · 자세히는 「출처」'; }
   const places = $('#places');
   for (const p of PLACES) {
     const b = document.createElement('button');
@@ -231,7 +260,9 @@ async function boot() {
   $('#verify').onclick = () => {
     openPanel(verifyHtml(state));
     body.querySelector('[data-a=cls]').onclick = (e) => { state.debug = !state.debug; e.target.setAttribute('aria-pressed', String(state.debug)); };
-    body.querySelector('[data-a=bus]').onclick = () => { panel.hidden = true; cam.flyTo(1042, 201, 150, 1.2); setCaption('버스 가림 사례 구간(자하문로). 지붕 뒤로 지나가는 차를 확인하세요.', 12); };
+    const busBtn = body.querySelector('[data-a=bus]');
+    if (!MAP.busDemo) busBtn.hidden = true;
+    else busBtn.onclick = () => { panel.hidden = true; cam.flyTo(...MAP.busDemo, 1.2); setCaption('버스 가림 사례 구간(자하문로). 지붕 뒤로 지나가는 차를 확인하세요.', 12); };
     body.querySelector('[data-a=hud]').onclick = (e) => { state.hud = !state.hud; $('#hud').hidden = !state.hud; e.target.setAttribute('aria-pressed', String(state.hud)); };
     body.querySelector('[data-a=bench]').onclick = () => { panel.hidden = true; runBench(); };
   };
@@ -242,7 +273,7 @@ async function boot() {
   });
 
   // ── 환경(시각 → 조명)
-  const env = { season: new Float32Array(4), shadowTint: new Float32Array(scene.sun.shadow_tint), palace: new Float32Array([-258.6, 12.2, 297.3, 878.1]),
+  const env = { season: new Float32Array(4), shadowTint: new Float32Array(scene.sun.shadow_tint), palace: new Float32Array(MAP.palace || [0, 0, 0, 0]),
     day: 1, dusk: 0, lateNight: 0, time: 0, shadowAmt: 1, snow: 0, rain: 0, debug: false, tilt: 0, tiltR: 0,
     look: LOOK0, sun: new Float32Array([0, 0, 1]), shadeCol: new Float32Array(3), sunAmt: 0, rayLen: 14 };
   const SKY = { night: [[10, 14, 34], [24, 30, 62]], dusk: [[62, 58, 110], [242, 150, 96]], day: [[156, 196, 232], [226, 234, 232]] };
@@ -356,8 +387,9 @@ async function boot() {
   function initialView() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     // 넓은 화면은 전체 지도. 세로 화면과 키 낮은 가로 휴대폰은 궁궐 축에 맞춘다(전체 지도가 너무 작게 보여서).
-    if (h <= w * 1.15 && h > 500) { cam.set(proj.W * 0.47, proj.H * 0.52, proj.H * 0.86); return; }
-    const box = [715, 720, 1370, 1290];   // 지도 px: 광화문(서쪽 끝 포함) ~ 경회루 연못
+    const fv = MAP.firstView;
+    if (h <= w * 1.15 && h > 500) { cam.set(proj.W * fv.wide[0], proj.H * fv.wide[1], proj.H * fv.wide[2]); return; }
+    const box = resolveBox(fv.box, scene.anchors, SIZE);   // 지도 px. 경복궁: 광화문(서쪽 끝 포함) ~ 경회루 연못
     const rect = (sel) => { const e = $(sel); const r = e && getComputedStyle(e).display !== 'none' ? e.getBoundingClientRect() : null; return r && r.height ? r : null; };
     const top = Math.max(rect('#places')?.bottom || 0, rect('#title')?.bottom || 0) + 8;
     const bot = h - (rect('#dock')?.top ?? h) + 8;
@@ -422,13 +454,13 @@ async function boot() {
     const night = 1 - env.day;
     R.begin(view);
     R.look = env.look;   // movers 가 룩 2 전조등 원뿔을 고른다
-    if (people) castDraw.emit(R, people, { alpha: acc / SIM_DT, view, cw: canvas.width, ch: canvas.height, season: state.season, rain: env.rain > 0.5, day: env.day });
+    if (people && castDraw) castDraw.emit(R, people, { alpha: acc / SIM_DT, view, cw: canvas.width, ch: canvas.height, season: state.season, rain: env.rain > 0.5, day: env.day });
     else movers.emitPeople(R, state.time, night);
     movers.emitVehicles(R, traffic.vehicles, acc / SIM_DT, night);
     movers.emitSignals(R, traffic.signals);
     if (night > 0.02) movers.emitLamps(R, traffic.signals, R.look === 2);
     birdView.day = env.day; birdView.F = R.F;
-    emitBirds(R, birds, birdView);
+    if (!birds.off) emitBirds(R, birds, birdView);
     // 틸트시프트: 멀리·중간 배율에서만. 가까이 당기면(화면 1px 당 지도 1.3→2.8 px) 사라져 픽셀이 또렷하게 남는다.
     env.tilt = state.tilt ? 1 - smooth(1.3, 2.8, view.scale / cam.dpr) : 0;
     env.tiltR = 4.5 * cam.dpr;
@@ -496,13 +528,13 @@ async function boot() {
     initSnap($('#snap'), canvas, draw, { notice: nt.textContent.trim(), site: 'midagedev.github.io/seoul-miniature' });
   }
   // ── 캡처·테스트용 수동 시계: __iso.manual(true) 후 __iso.step(dt) 로 한 프레임씩 결정론적으로 진행
-  window.__iso = {
+  window.__iso = { view,
     finds,
     state, cam, traffic, env, R, proj,
     manual(on) { state.manual = on; last = performance.now(); },
     step(dt) { advance(dt); draw(); },
     startTour, stopTour, setSeason,
-    tourLength: TOUR.total,
+    tourLength: TOUR.total, map: MAP, places: PLACES,
     people, castDraw, castReg,
     birds, scareBirds: (x, y, r) => birds.scare(x, y, r), launchBirds: (i) => birds.launch(i),
     applyHash, hashNow,

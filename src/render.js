@@ -6,6 +6,8 @@
 //   →  screen : 카메라 변환 + sharp-bilinear 확대 / mip 축소 + 눈·비
 const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 import { createBgTiles } from './bgtiles.js';
+// GLSL 실수 리터럴: 정수로 떨어지는 값(여의도 카메라 중심 등)도 소수점을 붙인다
+const GF = (v) => { const t = String(Number(v)); return /[.e]/.test(t) ? t : t + '.0'; };
 const SPR_STRIDE = 9;   // dstX,dstY,w,h, srcX,srcY, depth, kind, param
 const LGT_STRIDE = 6;   // x,y,radius, r,g,b
 
@@ -14,11 +16,12 @@ precision highp float;
 precision highp int;
 ${L2 ? '#define LOOK2' : ''}
 const vec2 MAPSZ = vec2(${P.W}.0, ${P.H}.0);
-const vec3 EX = vec3(${P.ex.join(',')});
-const vec3 EY = vec3(${P.ey.join(',')});
-const vec3 VD = vec3(${P.vd.join(',')});
-const float CX = ${P.cx}; const float CY = ${P.cy}; const float CAMVD = ${P.camDotVd};
+const vec3 EX = vec3(${P.ex.map(GF).join(',')});
+const vec3 EY = vec3(${P.ey.map(GF).join(',')});
+const vec3 VD = vec3(${P.vd.map(GF).join(',')});
+const float CX = ${GF(P.cx)}; const float CY = ${GF(P.cy)}; const float CAMVD = ${GF(P.camDotVd)};
 const float MPP = ${P.m.toFixed(4)};
+const float WCOL = ${(2 / P.m).toFixed(4)};   // 창 불빛 가로 칸 = 2 m(지도 px 수: 0.5 m/px 지도에서 4)
 uniform sampler2D uDepth;
 uniform float uF;   // 합성 해상도 배율(1 또는 2). (gl_FragCoord + uOrg) / uF = 지도 px
 uniform vec2 uOrg;  // 창 합성(휴대폰 2배): 이 FBO 의 (0,0) 텍셀이 합성 격자(지도 px × uF)에서 놓인 자리. 전체 FBO 면 0
@@ -28,7 +31,7 @@ float bgDepth(ivec2 p){
   p = clamp(p, ivec2(0), ivec2(MAPSZ) - 1);
   vec2 rg = floor(texelFetch(uDepth, p, 0).rg * 255.0 + 0.5);
   float v = rg.r * 256.0 + rg.g;
-  return v > 65534.5 ? 1.0e9 : 2060.0 + v * 0.02;
+  return v > 65534.5 ? 1.0e9 : ${P.D0.toFixed(3)} + v * ${GF(P.dstep)};   // 지도별 깊이 디코드 상수(geom.js makeProjection)
 }
 float groundDepth(float py){ float v = (MAPSZ.y * 0.5 - py) * MPP + CY; return -v * EY.z / VD.z - CAMVD; }
 float heightOf(ivec2 p, float d){ return VD.z * (d - groundDepth(float(p.y) + 0.5)); }
@@ -385,16 +388,17 @@ layout(location=3) in float aParam;
 const vec2 MAPSZ = vec2(${P.W}.0, ${P.H}.0);
 uniform float uF; uniform vec2 uOrg, uFb;   // 합성 배율, 창 원점(합성 텍셀), FBO 크기
 uniform float uSS;   // 깊은 단계 아틀라스(uHi)의 해상도(지도 px 당 아틀라스 px): 4·8
+const float PS = ${P.ps.toFixed(4)};   // 픽셀 크기로 그린 스프라이트(사람·새)의 지도별 배율: 0.5 m/px 지도 1, 1 m/px 지도 0.5
 out vec2 vSrc; out vec2 vLocal; flat out float vDepth; flat out float vKind; flat out float vParam; flat out vec2 vSize;
 void main(){
   vec4 dst = aDst;
 #ifdef LOOK2
   // 룩 2: 사람 발밑 그림자(가로로 긴 띠)를 해 반대쪽으로 반 px 민 타원 칸으로 키운다. 새 그림자(정사각)는 그대로.
-  if (aSrc.w > 2.5 && aSrc.w < 3.5 && aDst.z >= aDst.w * 3.0) dst = vec4(aDst.x + (aDst.z - 0.5) * 0.5 - 1.25, aDst.y - 0.5, 3.5, 1.5);
+  if (aSrc.w > 2.5 && aSrc.w < 3.5 && aDst.z >= aDst.w * 3.0) dst = vec4(aDst.x + (aDst.z - 0.5 * PS) * 0.5 - 1.25 * PS, aDst.y - 0.5 * PS, 3.5 * PS, 1.5 * PS);
 #endif
   vec2 px = dst.xy + aCorner * dst.zw;
   // 기본 아틀라스(kind 0~6)는 지도 px 의 2배 해상도(geom.js SPRITE_SCALE), 깊은 단계 아틀라스(kind 7 이상)는 uSS 배
-  vLocal = aCorner * dst.zw; vSrc = aSrc.xy + vLocal * (aSrc.w > 6.5 && aSrc.w < 10.5 ? uSS : 2.0);
+  vLocal = aCorner * dst.zw; vSrc = aSrc.xy + vLocal * (aSrc.w > 6.5 && aSrc.w < 10.5 ? uSS : (aSrc.w < 0.5 || (aSrc.w > 1.5 && aSrc.w < 2.5) ? 2.0 : 2.0 / PS));   // 차량·차량 그림자(0·2)는 m 로 그린 아틀라스라 배율 없음
   vDepth = aSrc.z; vKind = aSrc.w; vParam = aParam; vSize = dst.zw;
   gl_Position = vec4((px * uF - uOrg) / uFb * 2.0 - 1.0, 0.0, 1.0);
 }`;
@@ -480,10 +484,10 @@ void main(){
     if (!(bd > vDepth - 0.35)) discard;
 #ifdef LOOK2
     vec2 e = (vLocal - vSize * 0.5) / (vSize * 0.5);
-    if (vSize.x > 3.0 && dot(e, e) > 1.0) discard;   // 사람: 타원
+    if (vSize.x > 3.0 * ${P.ps.toFixed(4)} && dot(e, e) > 1.0) discard;   // 사람: 타원
 #endif
 #ifdef LOOK2
-    o = vec4(mix(vec3(1.0), uShadowTint, uShadowAmt * (vSize.x > 3.0 ? 0.7 : 1.0)), 1.0);
+    o = vec4(mix(vec3(1.0), uShadowTint, uShadowAmt * (vSize.x > 3.0 * ${P.ps.toFixed(4)} ? 0.7 : 1.0)), 1.0);
 #else
     o = vec4(mix(vec3(1.0), uShadowTint, uShadowAmt), 1.0);
 #endif
@@ -898,11 +902,11 @@ void main(){
           zc = zs / ws; dc = ds / ws;
           // 벽면을 따라 가로 1 px 당 밑동 깊이 변화 → 가로 칸 한가운데로 옮겨 잰다
           float n = ok.x * ok.y + ok.z * ok.w;
-          if (n > 0.5) dc += ((d0.y - d0.x) * ok.x * ok.y + (d0.w - d0.z) * ok.z * ok.w) / n * ((floor(xc / 4.0) + 0.5) * 4.0 - xc);
+          if (n > 0.5) dc += ((d0.y - d0.x) * ok.x * ok.y + (d0.w - d0.z) * ok.z * ok.w) / n * ((floor(xc / WCOL) + 0.5) * WCOL - xc);
         }
       }
       float fl = floor(zc / 3.3);
-      float col = floor(xc / 4.0);
+      float col = floor(xc / WCOL);
       float bld = floor(dc / 9.0);
       float r = hash3(vec3(col, fl, bld));
       float flick = hash3(vec3(col, fl, floor(uTime / 7.0 + r * 9.0)));
@@ -1081,6 +1085,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
   const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
   if (!gl) throw new Error('WebGL2 를 쓸 수 없습니다');
   const { W, H } = proj;
+  const PSJ = proj.ps || 1;   // 픽셀 단위로 정한 크기(빛 반경 등)의 지도별 배율
 
   const bgScale = Math.round(assets.bg.width / W);
   const tex = (img, { filter = gl.NEAREST, internal = gl.RGBA8, format = gl.RGBA, mip = false } = {}) => {
@@ -1110,11 +1115,13 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
   const T = {
     // 깊이는 RG, 클래스 맵 둘은 R 만 쓴다 → RG8·R8 로 올려 RGBA8 대비 GPU 메모리를 줄인다(셰이더가 읽는 값은 같다)
     bg: tex(assets.bg, { mip: bgScale === 2 }), depth: tex(assets.depth, { internal: gl.RG8, format: gl.RG }),
-    cls: tex(assets.cls, { internal: gl.R8, format: gl.RED }), sem: tex(assets.sem, { internal: gl.R8, format: gl.RED }),
+    sem: tex(assets.sem, { internal: gl.R8, format: gl.RED }),
+    cls: null,
     crown: assets.crown ? tex(assets.crown, { internal: gl.RG8, format: gl.RG }) : null,   // 수관 마스크(없으면 클래스 맵대로)
     // 차량 깊이 코드·그림자는 R 만 읽는다 → R8
     veh: tex(assets.veh), vehDepth: tex(assets.vehDepth, { internal: gl.R8, format: gl.RED }), vehShadow: tex(assets.vehShadow, { internal: gl.R8, format: gl.RED }), people: tex(assets.people),
   };
+  T.cls = assets.cls ? tex(assets.cls, { internal: gl.R8, format: gl.RED }) : T.sem;   // 가림 판정 클래스(검증 오버레이용). 없는 지도는 의미 클래스 맵으로 대신한다
   const target = (w, h, filter, mip) => {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -1314,11 +1321,11 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
     light(x, y, radius, r, g, b) {
       if (nLgt >= MAX_LGT) return;
       const o = nLgt++ * LGT_STRIDE;
-      lgtData[o] = x; lgtData[o + 1] = y; lgtData[o + 2] = radius; lgtData[o + 3] = r; lgtData[o + 4] = g; lgtData[o + 5] = b;
+      lgtData[o] = x; lgtData[o + 1] = y; lgtData[o + 2] = radius * PSJ;   // 반경은 0.5 m/px 지도 기준 px 로 받는다 lgtData[o + 3] = r; lgtData[o + 4] = g; lgtData[o + 5] = b;
     },
     counts() { return { sprites: nSpr, shadows: nShd, lights: nLgt, staticLights: nStatic }; },
     // 룩 2 정적 광원: Float32Array [x, y, 반경, r, g, b, 높이(m)] × n. 다음 밤 프레임에 한 번 굽는다.
-    setStaticLights(data) { staticData = data; nStatic = data.length / 7; baked = false; },
+    setStaticLights(data) { if (PSJ !== 1) { data = Float32Array.from(data); for (let i = 2; i < data.length; i += 7) data[i] *= PSJ; } staticData = data; nStatic = data.length / 7; baked = false; },
     // 합성 배율: 확대 화면이고 0.25 m/px 배경이 올라가 있으면 2배
     // 합성 배율: 통짜 0.25 m 그림이면 확대 시 2배. 타일 경로면 plan() 이 정한 단계(없으면 목표 단계)
     pickF(scale) { return SETS[2] ? (scale > 1.05 ? 2 : 1) : (this._plan ? this._plan.F : targetOf(scale)); },

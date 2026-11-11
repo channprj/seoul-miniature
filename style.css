@@ -7,14 +7,14 @@
 /* 인앱 브라우저는 위아래 자체 바 때문에 100vh 가 어긋난다 → dvh(폴백 vh). 당겨서 새로고침·페이지 확대 방지 */
 html, body { margin: 0; height: 100%; height: 100vh; height: 100dvh; overflow: hidden; overscroll-behavior: none; }
 body { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-text-size-adjust: 100%; }
-button, #places, #dock, #foot { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+button, #places, #maps, #dock, #foot { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
 body { background: linear-gradient(180deg, var(--sky-a), var(--sky-b)); color: var(--ink); -webkit-font-smoothing: antialiased; }
 #c { position: fixed; inset: 0; width: 100%; height: 100%; height: 100vh; height: 100dvh; display: block; touch-action: none; cursor: grab; image-rendering: pixelated; }
 #c.drag { cursor: grabbing; }
 #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(8, 10, 18, 0.34) 100%); }
 
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-.glass, #dock, #places button, #foot button, #hud, .card {
+.glass, #dock, #places button, #maps, #foot :is(button, a.btn), #hud, .card {
   background: var(--glass); backdrop-filter: blur(14px) saturate(1.3); -webkit-backdrop-filter: blur(14px) saturate(1.3);
   border: 1px solid var(--line);
 }
@@ -29,6 +29,14 @@ body.dark #title { color: var(--ink); text-shadow: 0 1px 14px rgba(0,0,0,.45); }
 #places { position: fixed; right: calc(env(safe-area-inset-right) + 20px); top: calc(env(safe-area-inset-top) + 24px); display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 #places button { padding: 7px 12px; border-radius: 999px; font-size: 12.5px; transition: background .2s, transform .2s; }
 #places button:hover { background: rgba(40, 46, 60, 0.8); transform: translateX(-3px); }
+
+/* 지도 고르기(경복궁 / 여의도): 제목 아래의 두 칸 알약. 지금 지도는 눌린 모양 */
+#maps { position: fixed; left: calc(env(safe-area-inset-left) + 28px); top: calc(env(safe-area-inset-top) + 122px); display: flex; gap: 2px; padding: 3px; border-radius: 999px; transition: opacity .5s; }
+#maps button { padding: 6px 13px; border-radius: 999px; font-size: 12.5px; background: none; border: 0; color: inherit; cursor: pointer; opacity: .78; }
+#maps button[aria-pressed=true] { background: rgba(255, 255, 255, 0.92); color: #1d2230; opacity: 1; cursor: default; font-weight: 600; }
+#maps button:not([aria-pressed=true]):hover { opacity: 1; background: rgba(255, 255, 255, 0.14); }
+body.cinema #maps { opacity: 0; pointer-events: none; }
+body.clean #maps, body.still #maps { display: none; }
 
 #dock { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 46px); transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
   padding: 10px 14px; border-radius: 18px; max-width: calc(100vw - 24px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28); }
@@ -49,7 +57,7 @@ body.dark #title { color: var(--ink); text-shadow: 0 1px 14px rgba(0,0,0,.45); }
 .primary.on { background: #fff; }
 
 #foot { position: fixed; left: calc(env(safe-area-inset-left) + 20px); right: calc(env(safe-area-inset-right) + 20px); bottom: calc(env(safe-area-inset-bottom) + 12px); display: flex; gap: 8px; align-items: center; font-size: 11.5px; pointer-events: none; }
-#foot button { pointer-events: auto; padding: 5px 10px; border-radius: 999px; opacity: 0.85; }
+#foot :is(button, a.btn) { pointer-events: auto; padding: 5px 10px; border-radius: 999px; opacity: 0.85; }
 #sound { display: inline-flex; align-items: center; gap: 5px; }
 #sound[hidden] { display: none; }
 #sound[aria-pressed="true"] { background: rgba(140, 190, 255, 0.9); color: #10203a; opacity: 1; font-weight: 600; }
@@ -93,6 +101,9 @@ body.clean #dock, body.clean #places, body.clean #foot, body.clean #title, body.
   #title .eyebrow { display: none; }
   #title h1 { font-size: 17px; margin: 0 0 2px; }
   #title p { font-size: 12px; min-height: 1.3em; }
+  #title { right: 150px; }
+  #maps { left: auto; right: calc(env(safe-area-inset-right) + 12px); top: calc(env(safe-area-inset-top) + 8px); }
+  #maps button { min-height: 40px; padding: 0 13px; font-size: 13px; }
   #places { flex-direction: row; align-items: center; gap: 6px; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 56px);
     overflow-x: auto; overflow-y: hidden; padding: 0 calc(env(safe-area-inset-right) + 12px) 0 calc(env(safe-area-inset-left) + 12px);
     scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
@@ -112,8 +123,10 @@ body.clean #dock, body.clean #places, body.clean #foot, body.clean #title, body.
   #seasons, #rain, #tilt, #look { order: 2; }
   #foot { left: calc(env(safe-area-inset-left) + 10px); right: calc(env(safe-area-inset-right) + 10px); bottom: calc(env(safe-area-inset-bottom) + 6px);
     flex-wrap: wrap; gap: 4px 6px; }
-  #foot button { min-height: 40px; padding: 0 12px; }
-  #notice { flex-basis: 100%; margin-left: 0; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #foot :is(button, a.btn) { min-height: 40px; padding: 0 12px; }
+  /* 맨 아랫줄 = 출처 표기 + 깃허브 아이콘(버튼 줄이 꽉 차 있어 표기 줄 오른쪽 끝에 둔다) */
+  #notice { flex: 1 1 calc(100% - 46px); min-width: 0; margin-left: 0; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #foot a.btn { order: 9; min-height: 30px; width: 36px; padding: 0; justify-content: center; }
   #notice .more { display: none; }
   #notice .etc { display: inline; }
 }
@@ -139,7 +152,7 @@ body.clean #dock, body.clean #places, body.clean #foot, body.clean #title, body.
   .chip, .primary { min-height: 40px; }
   #seasons, #rain, #tilt, #look { order: 0; }
   #foot { left: calc(env(safe-area-inset-left) + 10px); right: calc(env(safe-area-inset-right) + 10px); bottom: calc(env(safe-area-inset-bottom) + 6px); flex-wrap: nowrap; gap: 6px; }
-  #foot button { min-height: 40px; padding: 0 12px; flex: none; }
+  #foot :is(button, a.btn) { min-height: 40px; padding: 0 12px; flex: none; }
   #notice { flex-basis: auto; min-width: 0; margin-left: auto; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #notice .more { display: none; }
   #notice .etc { display: inline; }
@@ -167,7 +180,7 @@ body.look2 #title { color: #262a35; text-shadow: 0 0 2px rgba(255, 255, 255, .75
 body.look2.dark #title { color: var(--ink); text-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
 body.look2 #title h1 { font-weight: 500; letter-spacing: 0.04em; }
 body.look2 #title .eyebrow { font-weight: 500; letter-spacing: 0.42em; }
-body.look2 :is(.glass, #dock, #places button, #foot button, #hud, .card) { border-width: 0.5px; }
+body.look2 :is(.glass, #dock, #places button, #foot :is(button, a.btn), #hud, .card) { border-width: 0.5px; }
 body.look2 #dock { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16); }
 body.look2 .primary { color: #2b2720; font-weight: 600; }
 body.look2 .chip[aria-pressed="true"] { background: rgba(214, 196, 164, 0.88); color: #2b2720; }
@@ -194,4 +207,10 @@ body.still #snap, body.still #finds { display: none; }
 .card ul.finds li b { display: block; font-weight: 600; }
 .card ul.finds li span { font-size: 11.5px; opacity: 0.75; }
 body.following #caption { font-weight: 600; }
-@media (max-width: 720px) { #foot { gap: 4px; } #foot button { padding: 0 8px; } #foot button .w { display: none; } }
+@media (max-width: 720px) { #foot { gap: 4px; } #foot :is(button, a.btn) { padding: 0 8px; } #foot :is(button, a.btn) .w { display: none; } }
+
+/* 깃허브 링크: 하단 버튼과 같은 알약. 좁은 화면에서는 글자를 숨기고 아이콘만(.w) */
+#foot a.btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; text-decoration: none; flex: none; }
+#foot a.btn svg { display: block; }
+.card .gh { display: inline-flex; align-items: center; gap: 6px; }
+#maps[hidden] { display: none; }

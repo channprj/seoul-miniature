@@ -449,6 +449,7 @@ export function createCastDraw(scene, proj) {
   const S = [0, 0, 0], P = [0, 0, 0], Q = [0, 0, 0];
   const kH = proj.ey[2] / proj.m, kD = proj.m * proj.ey[2] / proj.vd[2];   // 높이 1 m 당 화면 px, 화면 한 줄 아래로 갈 때 지면 깊이 변화(음수)
   const ex = proj.ex;
+  const UX = proj.vd[0] / proj.vd[2], UY = proj.vd[1] / proj.vd[2];   // 단 위 사람(zp): 지면 점과 같은 픽셀, 그 면의 깊이로 그린다
   let R = null, hi = null, q = 2, KP = 1, KF = 1, o = null, sys = null, v0 = 0, v1 = 0, v2 = 0, v3 = 0, bubbles = true, drawn = 0;
   const bubAt = [];
   const src = (c) => (hi ? hi.cast[c.i] : c.lo);
@@ -544,6 +545,7 @@ export function createCastDraw(scene, proj) {
       bubbles = view.scale >= 1.4; bubAt.length = 0;
       o.parasol = opt.season === 1 && opt.day > 0.7 && !opt.rain;
       const t = sys.time + opt.alpha * SIM_DT, al = opt.alpha;
+      const zs = sys.zAt || (() => 0);
       const { walkers, ov } = sys;
       for (let i = 0; i < walkers.length; i++) {
         const w = walkers[i];
@@ -553,18 +555,20 @@ export function createCastDraw(scene, proj) {
         proj.project(P[0], P[1], P[2], S);
         if (S[0] < v0 - 6 || S[0] > v2 + 6 || S[1] < v1 - 6 || S[1] > v3 + 6) continue;
         const face = sys.wdir(i) * w.sx >= 0 ? 1 : -1;
-        fig(P[0], P[1], P[2], w.look, w.run ? 'run' : 'walk', d, face, 0, null, w.bub, t);
-        for (const f of w.fol) { const d2 = sys.wpos(i, t, Q, f.dd); fig(Q[0] + f.ox, Q[1] + f.oy, Q[2], f.look, 'walk', d2, face, f.hop > 0 ? f.hop : 0, null, f.bub, t); }
+        let zp = zs(P[0], P[1]);   // 단(월대 등) 안쪽을 지날 때는 같은 픽셀에 그 면의 깊이로
+        fig(P[0] + zp * UX, P[1] + zp * UY, P[2] + zp, w.look, w.run ? 'run' : 'walk', d, face, 0, null, w.bub, t);
+        for (const f of w.fol) { const d2 = sys.wpos(i, t, Q, f.dd), qx = Q[0] + f.ox, qy = Q[1] + f.oy; zp = zs(qx, qy); fig(qx + zp * UX, qy + zp * UY, Q[2] + zp, f.look, 'walk', d2, face, f.hop > 0 ? f.hop : 0, null, f.bub, t); }
       }
       const st = sys.standing;
-      for (let i = 0; i < st.length; i++) { const s = st[i]; if (s.vis) fig(s.x, s.y, s.z, s.look, s.pose, 0, s.face, 0, null, s.bub, t); }
+      for (let i = 0; i < st.length; i++) { const s = st[i], zp = s.zp || 0; if (s.vis) fig(s.x + zp * UX, s.y + zp * UY, s.z + zp, s.look, s.pose, 0, s.face, 0, null, s.bub, t); }
       const one = (a) => {
         const x = a.ox + (a.x - a.ox) * al, y = a.oy + (a.y - a.oy) * al;
         const pose = a.moving ? (a.pose === 'run' ? 'run' : 'walk') : a.waveT > 0 && a.pose === 'stand' ? 'wave' : a.pose === 'run' ? 'stand' : a.pose;
-        fig(x, y, a.z, a.look || LOOK_STAND, pose, a.dist, a.face, a.hopT, a.prop, a.bubble, t);
+        const zp = a.zp || 0;
+        fig(x + zp * UX, y + zp * UY, a.z, a.look || LOOK_STAND, pose, a.dist, a.face, a.hopT, a.prop, a.bubble, t);
       };
       for (const a of sys.actors) if (a.on) one(a);
-      for (const g of sys.guests) { one(g); for (const f of g.fol) fig(f.x, f.y, g.z, f.look, f.look.fam === 'dog' && f.sit ? 'sit' : 'stand', 0, g.face, f.hop, null, f.bub, t); }
+      for (const g of sys.guests) { one(g); const zp = g.zp || 0; for (const f of g.fol) fig(f.x + zp * UX, f.y + zp * UY, g.z, f.look, f.look.fam === 'dog' && f.sit ? 'sit' : 'stand', 0, g.face, f.hop, null, f.bub, t); }
       // 궁 둘레 러너: 발을 디딜 때마다 반 칸씩 들썩인다
       for (const r of sys.runners || []) {
         if (!r.vis) continue;
@@ -578,7 +582,8 @@ export function createCastDraw(scene, proj) {
       for (const p of sys.props) {
         if (p.sc && !p.sc.on) continue;
         if (p.type === 'haechi') {
-          proj.project(p.x, p.y, 0, S);
+          const zp = p.zp || 0;
+          proj.project(p.x + zp * UX, p.y + zp * UY, zp, S);
           if (S[0] < v0 - 6 || S[0] > v2 + 6 || S[1] < v1 - 4 || S[1] > v3 + 10) continue;
           const hx = Math.round(S[0] * q) / q, hy = Math.round(S[1] * q) / q;
           R.shadow(hx - 1.6, hy + 0.1, 6.5, 1.3, 0, 0, S[2], 3);

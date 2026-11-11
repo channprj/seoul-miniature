@@ -61,6 +61,24 @@ export function addCast(scene) {
   return cast;
 }
 
+// 장면 데이터 보정(scene.json 은 해시로 고정이라 여기서 고친다). 근거 = OSM 담(barrier=wall)과 겹치는 점(자산 점검 기록의 후속 2).
+// standing: 담 중심선에서 0.45 m 안(담 속)에 선 사람 → 원래 있던 쪽으로 담에서 1.2 m. cut: 문(OSM gate)에서 26 m 넘게 떨어진 곳에서 담을 뚫고 지나는 경로 → 그 점 1 m 앞에서 끊고 긴 쪽만 걷는다.
+// 그림(자산)과 무관한 장면 번호 기준이라 자산을 다시 구워도 그대로 맞는다.
+const SCENE_FIX = { standing: { 8: [-25.75, 593.74], 94: [-40.40, 501.53] }, cut: { 487: [97.7, 509.4], 576: [46.2, 510.0] } };
+function cutPath(pts, c) {
+  let bk = 0, bt = 0, bd = Infinity;
+  for (let k = 0; k < pts.length - 1; k++) {
+    const a = pts[k], b = pts[k + 1], dx = b[0] - a[0], dy = b[1] - a[1], t = Math.max(0, Math.min(1, ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+    const d = Math.hypot(a[0] + dx * t - c[0], a[1] + dy * t - c[1]);
+    if (d < bd) { bd = d; bk = k; bt = t; }
+  }
+  const a = pts[bk], b = pts[bk + 1], sl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const at = (u) => { const t = Math.max(0, Math.min(1, u)); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (a[2] || 0) + ((b[2] || 0) - (a[2] || 0)) * t]; };
+  const head = [...pts.slice(0, bk + 1), at(bt - 1 / sl)], tail = [at(bt + 1 / sl), ...pts.slice(bk + 1)];
+  const len = (p) => p.reduce((sum, q, i) => (i ? sum + Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) : 0), 0);
+  return len(head) >= len(tail) ? head : tail;
+}
+
 // grid = { w, h, cls } (지도 px, 0.5 m). opts: { seed, birds(새 시스템, 아이·비둘기 장면용), heightAt(px, py) → 지면(z=0) 대비 높이 m(브라우저에서만) }
 export function createPeople(scene, grid, opts = {}) {
   const seed = opts.seed ?? 5;
@@ -86,19 +104,50 @@ export function createPeople(scene, grid, opts = {}) {
   const isHanbok = (L) => L.fam === 'hf' || L.fam === 'hm' || L.fam === 'hk';
 
   // ── 걸을 수 있는 곳(1 m 칸). 칸 안의 지도 px 넷이 모두 같은 종류이고(브라우저에선) 평평해야 한다.
-  const mw = grid.w >> 1, mh = grid.h >> 1, walk = new Uint8Array(mw * mh);
+  // 높은 단(광화문 월대·전각 앞 월대처럼 넓고 평평한 포장면, 지면 위 0.3~2.6 m)도 걷는 곳으로 받는다. hz = 그 칸에 선 사람의 높이(m, 지면 0).
+  // sim 좌표는 그대로 '화면 픽셀과 맞는 지면(z=0) 점'이고, 단 위 사람은 같은 픽셀에 그 면의 깊이로 그린다(UX·UY, emotes.js).
+  // 단 가장자리(이웃 칸과 높이 차가 큰 곳)는 걷는 곳에서 빠지므로, 오르내림은 완만하게 이어진 곳(계단·경사)으로만 된다 — okLine 이 높이가 튀는 선을 막는다.
+  const mw = grid.w >> 1, mh = grid.h >> 1, walk = new Uint8Array(mw * mh), hz = new Float32Array(mw * mh), hr = new Float32Array(mw * mh);
+  const PLAT = [0.3, 2.6], SLOPE = 0.3;   // 단 높이 범위(m), 이웃 1 m 칸 사이 높이 차 한도(m)
+  let platCells = 0;
   {
     const { w, cls } = grid, hAt = opts.heightAt;
     const kind = (c) => (c === 5 || c === 11 ? BIT.PAVE : c === 3 ? BIT.GRASS : c === 1 ? BIT.DIRT : 0);
+    const cand = new Uint8Array(mw * mh), gh = [];
     for (let cy = 4; cy < mh - 4; cy++) for (let cx = 4; cx < mw - 4; cx++) {
-      const o = cy * 2 * w + cx * 2;
+      const o = cy * 2 * w + cx * 2, i = cy * mw + cx;
       const k = kind(cls[o]);
       if (!k || kind(cls[o + 1]) !== k || kind(cls[o + w]) !== k || kind(cls[o + w + 1]) !== k) continue;
-      if (hAt && (Math.abs(hAt(cx * 2, cy * 2)) > 0.3 || Math.abs(hAt(cx * 2 + 1, cy * 2 + 1)) > 0.3)) continue;
-      walk[cy * mw + cx] = k;
+      if (hAt) {
+        const h0 = hAt(cx * 2, cy * 2), h1 = hAt(cx * 2 + 1, cy * 2 + 1);
+        hr[i] = (h0 + h1) / 2;
+        if (Math.abs(h0) > 0.3 || Math.abs(h1) > 0.3) {
+          if (k === BIT.PAVE && h0 > PLAT[0] && h0 < PLAT[1] && h1 > PLAT[0] && h1 < PLAT[1] && Math.abs(h0 - h1) < 0.15) cand[i] = 1;
+          continue;
+        }
+        if ((cx & 7) === 0 && (cy & 7) === 0) gh.push(hr[i]);
+      }
+      walk[i] = k;
+    }
+    // 단 칸: 둘레 8칸이 모두 걷는 곳(지면 또는 단 후보)이고 높이가 완만하게 이어져야 한다(가장자리·난간 옆은 빠진다)
+    if (hAt) {
+      gh.sort((a, b) => a - b);
+      const g0 = gh.length ? gh[gh.length >> 1] : 0;   // 지면이 깊이 맵에서 보이는 높이(칸 최솟값 깊이의 치우침)
+      for (let cy = 5; cy < mh - 5; cy++) for (let cx = 5; cx < mw - 5; cx++) {
+        const i = cy * mw + cx;
+        if (!cand[i]) continue;
+        let ok = true;
+        for (let j = -1; j <= 1 && ok; j++) for (let k = -1; k <= 1; k++) { const n = i + j * mw + k; if (!(walk[n] || cand[n]) || Math.abs(hr[n] - hr[i]) > SLOPE) { ok = false; break; } }
+        if (!ok) continue;
+        walk[i] = BIT.PAVE; hz[i] = Math.max(0, hr[i] - g0); platCells++;
+      }
     }
   }
   const cellAt = (x, y) => { proj.project(x, y, 0, S); const cx = S[0] >> 1, cy = S[1] >> 1; return cx < 0 || cy < 0 || cx >= mw || cy >= mh ? 0 : walk[cy * mw + cx]; };
+  // 그 자리에 선 사람의 높이(m). 단 칸이 아니면 0. 걷는 곳 높이(hr)는 높이가 튀는지 볼 때 쓴다.
+  const zAt = (x, y) => { proj.project(x, y, 0, S); const cx = S[0] >> 1, cy = S[1] >> 1; return cx < 0 || cy < 0 || cx >= mw || cy >= mh ? 0 : hz[cy * mw + cx]; };
+  const hrAt = (x, y) => { proj.project(x, y, 0, S); const cx = S[0] >> 1, cy = S[1] >> 1; return cx < 0 || cy < 0 || cx >= mw || cy >= mh ? 0 : hr[cy * mw + cx]; };
+  const UX = proj.vd[0] / proj.vd[2], UY = proj.vd[1] / proj.vd[2];   // (x,y,0) 과 같은 픽셀에 보이는 높이 1 m 점까지의 수평 이동
   const clsAt = (x, y) => { proj.project(x, y, 0, S); const px = Math.floor(S[0]), py = Math.floor(S[1]); return px < 0 || py < 0 || px >= grid.w || py >= grid.h ? 0 : grid.cls[py * grid.w + px]; };
   // 발 픽셀이 건물·나무에 가려진 자리(말풍선을 띄우지 않는다)
   const hidden = (x, y) => { const c = clsAt(x, y); return c === 6 || c === 7 || c === 8 || c === 9 || c === 10; };
@@ -112,7 +161,12 @@ export function createPeople(scene, grid, opts = {}) {
   };
   const okLine = (x0, y0, x1, y1, bits = BIT.PAVE) => {
     const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 0.4));
-    for (let k = 0; k <= n; k++) if (!(cellAt(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n) & bits)) return false;
+    let hp = hrAt(x0, y0);
+    for (let k = 0; k <= n; k++) {
+      const x = x0 + (x1 - x0) * k / n, y = y0 + (y1 - y0) * k / n;
+      if (!(cellAt(x, y) & bits)) return false;
+      const h = hrAt(x, y); if (Math.abs(h - hp) > SLOPE + 0.05) return false; hp = h;   // 단 가장자리를 뛰어넘지 않는다
+    }
     return true;
   };
   const okDisk = (x, y, r, bits = BIT.PAVE) => {
@@ -139,7 +193,8 @@ export function createPeople(scene, grid, opts = {}) {
     return true;
   };
   // 한 묶음의 점이 서로 gap(m) 이상 떨어져 있고 모두 설 수 있으면 통과
-  const groupOk = (pts, bits = BIT.PAVE, gap = 1.0) => pts.every((p, i) => tryPt(p[0], p[1], bits) && pts.every((q, j) => j <= i || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap));
+  // 한 묶음은 같은 높이(단 위끼리, 또는 지면끼리)에 선다
+  const groupOk = (pts, bits = BIT.PAVE, gap = 1.0) => { const z0 = pts.length ? zAt(pts[0][0], pts[0][1]) : 0; return pts.every((p, i) => tryPt(p[0], p[1], bits) && Math.abs(zAt(p[0], p[1]) - z0) < 0.35 && pts.every((q, j) => j <= i || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap)); };
   const anchor = (px, py) => toWorld(px, py, [0, 0]);
   // 좌표는 tour.js PLACES 의 지도 px(건물 가운데쯤). 실제 자리는 이 둘레에서 클래스 맵으로 찾는다.
   const A = { gate: anchor(850, 1225), geun: anchor(1215, 985), gyeong: anchor(1275, 800), hyang: anchor(1830, 650), seochon: anchor(640, 520), bukchon: anchor(2250, 980), sejong: anchor(330, 1230) };
@@ -149,7 +204,8 @@ export function createPeople(scene, grid, opts = {}) {
 
   // ── 걷는 사람: 경로를 왕복(닫힌 식: 위상 + 시간 × 속도 − 누적 정지 시간). 유형·동행은 번호 해시와 경로 위치로 정한다(고정).
   const walkers = [];
-  scene.walkers.forEach((w, i) => {
+  scene.walkers.forEach((w0, i) => {
+    const w = SCENE_FIX.cut[i] ? { ...w0, pts: cutPath(w0.pts, SCENE_FIX.cut[i]) } : w0;
     const cum = cumLengths(w.pts), L = cum[cum.length - 1];
     if (!(L > 1)) return;
     const h1 = hash01(i * 19 + 2), h2 = hash01(i * 23 + 7), h3 = hash01(i * 29 + 13), h4 = hash01(i * 31 + 3);
@@ -201,13 +257,14 @@ export function createPeople(scene, grid, opts = {}) {
     return raw;
   };
   // 서 있는 사람(장면 데이터): 자리를 예약해 두고, 차도 위에 놓인 사람은 그리지 않게 한다(장면 데이터의 흠)
-  const standing = scene.standing.map((s, i) => {
+  const standing = scene.standing.map((s0, i) => {
+    const s = SCENE_FIX.standing[i] ? { ...s0, x: SCENE_FIX.standing[i][0], y: SCENE_FIX.standing[i][1] } : s0;
     const h1 = hash01(i * 41 + 5), h2 = hash01(i * 43 + 1), h3 = hash01(i * 47 + 9), pal = inPalace(s.x, s.y);
     const bad = clsAt(s.x, s.y) === 2;
     if (bad) ov.skipS[i] = 1; else claim(s.x, s.y);
     const look = pal && h1 < HANBOK.palace ? (h2 < 0.72 ? LK('hf', Math.floor(h3 * 14), h2) : LK('hm', Math.floor(h3 * 6), h2))
       : LK('a', s.pal, h2, h1 < 0.6 ? { hat: h3 < 0.5 ? 1 + Math.floor(h2 * 8) : 0, bag: h3 > 0.7 ? 1 + Math.floor(h2 * 4) : 0 } : {});
-    return { x: s.x, y: s.y, z: s.z || 0, look, pose: 'stand', face: h3 < 0.5 ? 1 : -1, bub: 0, vis: !bad, bad, zone: pal ? 'p' : 's', night: hash01(i * 5 + 3), key: h1, tourist: look.fam === 'a' && h1 < 0.6 };
+    return { x: s.x, y: s.y, z: s.z || 0, zp: zAt(s.x, s.y), look, pose: 'stand', face: h3 < 0.5 ? 1 : -1, bub: 0, vis: !bad, bad, zone: pal ? 'p' : 's', night: hash01(i * 5 + 3), key: h1, tourist: look.fam === 'a' && h1 < 0.6 };
   });
 
   // 마주칠 수 있는 쌍: 경로끼리 1.3 m 안으로 지나가는 곳이 있는 두 사람. 시작할 때 한 번만 센다.
@@ -240,14 +297,17 @@ export function createPeople(scene, grid, opts = {}) {
   const mk = (x, y, look, o = {}) => {
     const a = { id: actors.length, x, y, z: 0, ox: x, oy: y, hx: x, hy: y, look, pose: 'stand', prop: null, bubble: 0, bT: 0, hopT: 0, waveT: 0, on: true,
       mayHide: false, path: null, pi: 0, wait: 0, speed: 1.2, dist: 0, moving: false, face: 1, wi: -1, ...o };
+    a.zo = o.z || 0; lift(a);
     actors.push(a);
     return a;
   };
+  // 선 자리의 높이(단 위면 그 면 높이). zp = 단 높이(그릴 때 같은 픽셀로 옮기는 몫), z = zp + 앉은 높이 등
+  const lift = (a) => { a.zp = zAt(a.x, a.y); a.z = a.zo + a.zp; };
   const say = (a, icon, dur = 1.8) => { a.bubble = icon; a.bT = dur; };
   const hop = (a, dur = 1) => { a.hopT = dur; };
   const go = (a, pts, speed, delay = 0) => { a.path = pts; a.pi = 0; a.speed = speed; a.wait = delay; };
   const idle = (a) => !a.path && a.wait <= 0;
-  const flash = (a) => fx.push({ type: 'flash', x: a.x, y: a.y, z: 1.55, t: 0, T: 0.16 });
+  const flash = (a) => { const zp = a.zp || 0; fx.push({ type: 'flash', x: a.x + zp * UX, y: a.y + zp * UY, z: 1.55 + zp, t: 0, T: 0.16 }); };
   const stepActor = (a, dt) => {
     a.ox = a.x; a.oy = a.y; a.moving = false;
     if (a.bT > 0 && (a.bT -= dt) <= 0) a.bubble = 0;
@@ -261,6 +321,7 @@ export function createPeople(scene, grid, opts = {}) {
       if (d <= rem) { a.x = t[0]; a.y = t[1]; rem -= d; a.dist += d; a.pi++; } else { a.x += dx / d * rem; a.y += dy / d * rem; a.dist += rem; rem = 0; }
     }
     a.moving = a.x !== a.ox || a.y !== a.oy;
+    if (a.moving && a.zo !== undefined) lift(a);
     if (a.moving) { const sx = (a.x - a.ox) * ex[0] + (a.y - a.oy) * ex[1]; if (Math.abs(sx) > 1e-4) a.face = sx > 0 ? 1 : -1; }
     if (a.pi >= a.path.length) a.path = null;
   };
@@ -289,7 +350,7 @@ export function createPeople(scene, grid, opts = {}) {
   const setOn = (sc, on) => {
     sc.on = on;
     for (const a of sc.actors) {
-      a.on = on; a.x = a.ox = a.hx; a.y = a.oy = a.hy; a.path = null; a.wait = 0; a.bubble = 0; a.bT = 0; a.hopT = 0; a.pose = a.pose0 || 'stand';
+      a.on = on; a.x = a.ox = a.hx; a.y = a.oy = a.hy; a.path = null; a.wait = 0; a.bubble = 0; a.bT = 0; a.hopT = 0; a.pose = a.pose0 || 'stand'; lift(a);
     }
     sc.t = 0; sc.st = 'idle'; sc.reset?.();
   };
@@ -398,7 +459,7 @@ export function createPeople(scene, grid, opts = {}) {
       start() {
         sc.st = 'out'; sc.t = 0; stats.ceremony++; sc.lastStart = { time: sys.time, tod: E.tod }; sc.lastEnd = null;
         sc.quick = fast(); sc.v = sc.quick ? Math.max(2.4, sc.len / 5) : 1.25; due = -1;
-        guards.forEach((g, k) => { g.on = true; g.x = g.ox = colH[k][0]; g.y = g.oy = colH[k][1]; go(g, [colC[k]], sc.v, -cols[k][1] / sc.v); });
+        guards.forEach((g, k) => { g.on = true; g.x = g.ox = colH[k][0]; g.y = g.oy = colH[k][1]; lift(g); go(g, [colC[k]], sc.v, -cols[k][1] / sc.v); });
         // 돌아가던 길이면 그 자리에서 바로 되돌아온다(길 위에 멈춰 서지 않게)
         watchers.forEach((w) => { const d = rr(0.5, sc.quick ? 1.5 : 5); go(w, [w.slot], sc.quick ? 2.2 : 1.3, w.x === w.hx && w.y === w.hy ? d : 0); say(w, BUB.BANG, 1.5); });
       },
@@ -808,7 +869,7 @@ export function createPeople(scene, grid, opts = {}) {
 
   // ── 광화문 앞 해치 한 쌍(고정 소품). 그림 타일에는 없어서 스프라이트로 세운다.
   // 좌표 근거: 광화문 정면 가운데의 지면 = 지도 px (783, 1218)(세 홍예 가운데 아래, 화면에서 읽은 값). 월드 축은 +x 가 문의 가로(동쪽), −y 가 남쪽(세종대로 쪽).
-  // 실제 해치는 월대 남쪽 끝 좌우에 남쪽을 보고 앉아 있다 → 정면에서 남쪽으로 24 m, 좌우로 14 m 를 목표로 하고,
+  // 실제 해치는 월대 남쪽 끝 좌우에 남쪽을 보고 앉아 있다 → 월대 남쪽 끝(깊이 맵에 월대가 없으면 정면에서 남쪽으로 24 m), 좌우로 14 m 를 목표로 하고,
   // 둘이 대칭을 유지한 채 가장 가까운 「보도·광장(클래스 11·1) + 걷는 경로에서 1.8 m 이상 + 예약 자리와 안 겹침」 자리를 클래스 맵으로 찾는다.
   const haechi = [];
   {
@@ -816,21 +877,29 @@ export function createPeople(scene, grid, opts = {}) {
     const paths = [];   // 근처를 지나는 걷는 경로의 점(1 m 간격)
     for (const w of walkers) for (let d = 0; d <= w.L; d += 1) { pointAt(w.pts, w.cum, d, P3); if (Math.abs(P3[0] - G0[0]) < 40 && Math.abs(P3[1] - G0[1] + 24) < 30) paths.push(P3[0], P3[1]); }
     const okSpot = (x, y) => {
-      for (const [dx, dy] of [[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]]) { const c = clsAt(x + dx, y + dy); if (c !== 11 && c !== 1) return false; }
+      // 해치는 월대 앞 지면에 선다(월대·난간 위가 아니다): 둘레가 보도·광장이고 지면 높이
+      for (const [dx, dy] of [[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]]) { const c = clsAt(x + dx, y + dy); if ((c !== 11 && c !== 1) || Math.abs(hrAt(x + dx, y + dy)) > 0.3) return false; }
       if (!free(x, y, 2.2)) return false;
       for (let k = 0; k < paths.length; k += 2) if (Math.hypot(paths[k] - x, paths[k + 1] - y) < 1.8) return false;
       return true;
     };
+    // 월대(걷는 단 칸)가 깊이 맵에 있으면 그 축과 남쪽 끝을 기준으로 삼는다: 해치 = 월대 남쪽 끝 좌우의 지면. 없으면(평평한 옛 그림) 정면 기준 24 m.
+    let cx0 = G0[0], depT = 24;
+    {
+      let lo = 1e9, hi = -1e9, south = -1;
+      for (let dep = 0; dep <= 70; dep += 0.5) for (let lat = -30; lat <= 30; lat += 0.5) if (zAt(G0[0] + lat, G0[1] - dep) > 0) { lo = Math.min(lo, lat); hi = Math.max(hi, lat); south = Math.max(south, dep); }
+      if (south > 0 && hi - lo > 8) { cx0 = G0[0] + (lo + hi) / 2; depT = south; }
+    }
     let best = null, bd = 1e9;
-    for (let lat = 9; lat <= 20; lat += 0.5) for (let dep = 14; dep <= 36; dep += 0.5) {
-      const d = Math.hypot(lat - 14, dep - 24);
-      if (d >= bd || !okSpot(G0[0] - lat, G0[1] - dep) || !okSpot(G0[0] + lat, G0[1] - dep)) continue;
+    for (let lat = 9; lat <= 20; lat += 0.5) for (let dep = 14; dep <= depT + 12; dep += 0.5) {
+      const d = Math.hypot(lat - 14, dep - depT);
+      if (d >= bd || !okSpot(cx0 - lat, G0[1] - dep) || !okSpot(cx0 + lat, G0[1] - dep)) continue;
       bd = d; best = [lat, dep];
     }
     if (best) for (const sd of [-1, 1]) {
-      const x = G0[0] + sd * best[0], y = G0[1] - best[1];
+      const x = cx0 + sd * best[0], y = G0[1] - best[1];
       haechi.push({ x, y, side: sd });
-      props.push({ type: 'haechi', x, y, variant: 0 });
+      props.push({ type: 'haechi', x, y, variant: 0, zp: zAt(x, y) });
       claim(x, y); for (let a = 0; a < 6; a++) claim(x + Math.cos(a * TAU / 6) * 1.2, y + Math.sin(a * TAU / 6) * 1.2);   // 사람이 서거나 지나가지 않는 자리
     }
   }
@@ -958,6 +1027,14 @@ export function createPeople(scene, grid, opts = {}) {
     return RT[0] * ex[0] + RT[1] * ex[1] >= 0 ? 1 : -1;
   };
   const RP = [0, 0, 0];
+  const latOk = (r) => {
+    const c = r.c, d = rfold(c, r.u);
+    pointAt(c.pts, c.cum, d, RN); const bx = RN[0], by = RN[1];
+    pointAt(c.pts, c.cum, Math.min(c.L, d + 2), RT); const tx0 = RT[0], ty0 = RT[1];
+    pointAt(c.pts, c.cum, Math.max(0, d - 2), RT);
+    let tx = tx0 - RT[0], ty = ty0 - RT[1]; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    const k = clsAt(bx - ty * r.lat, by + tx * r.lat); return k === 1 || k === 11;
+  };
   const runFrac = (t) => ((t >= 6 && t < 9) || (t >= 18 && t < 21) ? 1 : t >= 9 && t < 18 ? 0.45 : t >= 21 && t < 23.5 ? 0.22 : t >= 5 && t < 6 ? 0.3 : 0.03);
   const wantR = (r) => r.key < runFrac(E.tod) * (E.rain ? 0.3 : 1) * (E.season === 3 ? 0.65 : 1);
   const stepRunners = (dt, first) => {
@@ -987,6 +1064,8 @@ export function createPeople(scene, grid, opts = {}) {
       r.lat += Math.max(-1.1 * dt, Math.min(1.1 * dt, (r.latT - r.lat) * Math.min(1, dt * 3)));   // 옆걸음은 초속 1.1 m 까지
       r.cv += ((r.slow ? r.v * 0.5 : r.v) - r.cv) * Math.min(1, dt * 3);
       r.u += r.cv * dt;
+      // 옆자리가 보도 밖이면(담길이 좁아지는 곳) lat 를 스텝당 0.25 m 까지 줄여 보도 안으로 들인다 — rpos 의 대체 규칙(절반·가운데)이 자리를 튀게 하지 않게
+      for (let n = 0; n < 5 && r.lat && !latOk(r); n++) r.lat -= Math.sign(r.lat) * Math.min(Math.abs(r.lat), 0.05);
     }
   };
   const ceremony = mkCeremony();
@@ -1038,6 +1117,7 @@ export function createPeople(scene, grid, opts = {}) {
     const w = walkers[i], fol = w.fol.map((f) => { wpos(i, sys.time, P3, f.dd); return { x: P3[0], y: P3[1], look: f.look, hop: 0, bub: 0, sit: false }; });
     wpos(i, sys.time, P3);
     const g = { id: -1 - i, x: P3[0], y: P3[1], z: P3[2], ox: P3[0], oy: P3[1], look: w.look, pose: 'stand', prop: null, bubble: 0, bT: 0, hopT: 0, waveT: 0, on: true, mayHide: false, path: null, wait: 0, moving: false, dist: 0, face: w.dir * w.sx >= 0 ? 1 : -1, wi: i, fol };
+    g.zo = P3[2]; lift(g);   // 단 위에서 멈췄으면 그 높이
     ov.skip[i] = 1; guests.push(g);
     return g;
   };
@@ -1177,7 +1257,7 @@ export function createPeople(scene, grid, opts = {}) {
   let stepN = 0;
   const sys = {
     haechi, runners, runChains, rpos, runFrac, toPx: (x, y) => { proj.project(x, y, 0, S); return [S[0], S[1]]; },
-    time: 0, rainT: 0, actors, guests, scenes, props, fx, floaters, walkers, standing, ov, stats, wpos, toWorld, env: E, ceremony, cast, clsAt, hidden, inPalace, pairCount: pairs.length / 2,
+    time: 0, rainT: 0, actors, guests, scenes, props, fx, floaters, walkers, standing, ov, stats, wpos, toWorld, env: E, ceremony, cast, clsAt, zAt, hrAt, platCells, hidden, inPalace, pairCount: pairs.length / 2,
     wdir: (i) => walkers[i].dir,
     step(dt, env = {}) {
       sys.time += dt; stepN++;
