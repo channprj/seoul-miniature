@@ -180,6 +180,8 @@ export async function loadAssets(onProgress = () => {}, { res = pickResolution()
     sceneJson(onBytes('scene'), map).then((s) => { out.scene = s; done('scene'); }),
     // 수관 마스크(선택): 다시 그린 그림의 실제 나무 자리. 없으면 클래스 맵의 수목 칸을 그대로 쓴다
     dataMap(`${D}/crown.png`, undefined, true).then((m) => { out.crown = m && m.width === 2752 ? m : null; }, () => { out.crown = null; }),
+    // 밤 창문 면 격자(창 격자 지도만, tools/build-winfaces.mjs 가 미리 계산). 없거나 못 읽으면 null → 앱이 실행 중 계산
+    map.windows ? bytes(`${D}/winfaces.json`, { optional: true }).then((u8) => { out.winfaces = u8 ? JSON.parse(utf8(u8)) : null; }, () => { out.winfaces = null; }) : null,
     ...Object.keys(names).map((k) => (k === 'bg' ? image : dataMap)(names[k], onBytes(k)).then((im) => { out[k] = im; done(k); })),
   ]);
   return out;

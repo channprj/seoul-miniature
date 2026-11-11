@@ -51,6 +51,7 @@ export const MAPS = {
     palace: null, uplights: [],
     firstView: { wide: [0.5, 0.5, 0.9], box: { at: ['parc1', 'park'], w: 850, h: 680 } },   // 세로 화면: 파크원과 여의도공원 사이를 가운데로
     busDemo: null,
+    windows: 'grid',                             // 밤 창문을 층 × 칸으로(winlights.js). 없으면 경복궁 식(그림의 창 픽셀, 2 m 칸)
     people: false, birds: false, finds: false, traffic: 'simple', cars: 700,
   },
 };

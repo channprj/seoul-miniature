@@ -13,7 +13,7 @@ import { optionalImage } from './assets.js';
 export const TILE = 256;
 const MAX_FETCH = 6, MAX_UPLOAD = 4, RETRY_MS = 3000, UP_FRAMES = 6, LOOKAHEAD = 12;
 
-export function createBgTiles(gl, W, H, man, { phone = false, load } = {}) {
+export function createBgTiles(gl, W, H, man, { phone = false, load, onTile } = {}) {
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const SX = phone || maxTex < 4096 ? 8 : 16, SY = phone || maxTex < 4096 ? 12 : 16, SLOTS = SX * SY;
   load ||= (z, tx, ty) => optionalImage(`${man.dir || 'redraw/tiles/'}z${z}_${tx}_${ty}.${man.levels[z].format || 'png'}`);
@@ -81,6 +81,7 @@ export function createBgTiles(gl, W, H, man, { phone = false, load } = {}) {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, sx * TILE, sy * TILE, gl.RGBA, gl.UNSIGNED_BYTE, e.bmp);
+    if (onTile) try { onTile(lv.z, key % lv.GW, (key / lv.GW) | 0, e.bmp); } catch (err) { console.warn('onTile', err); }   // 올리기 전 그림을 한 번 읽을 기회(창 격자 추정)
     e.bmp.close?.(); e.bmp = null; e.st = 'up'; e.slot = s; lv.ups++;
     owner[s] = lv.z * 1e6 + key; slotUsed[s] = frame;
     lv.idx.set([sx, sy, 255, 255], key * 4); lv.dirty = true;

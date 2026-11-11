@@ -14,6 +14,8 @@ import { createBirds, emitBirds } from './birds.js';
 import { createBgm } from './audio.js';
 import { cloudAmount } from './clouds.js';
 import { buildStaticLights } from './nightlights.js';
+import { buildFaces, classifyFaces, createWinEstimator, unpackWinFaces } from './winfaces.js';
+import { inflateRaw } from './gunzip.js';
 import { createPeople, addCast } from './sim/people.js';
 import { buildCast, extendPeopleAtlas, withCastHi, createCastDraw } from './emotes.js';
 
@@ -90,8 +92,17 @@ async function boot() {
   const va = buildVehicleAtlas(scene, proj);
   assets.veh = va.veh; assets.vehDepth = va.vehDepth; assets.vehShadow = va.vehShadow;
   scene.vehicle_atlas = { ...scene.vehicle_atlas, frames: va.frames };
+  // 창 격자 모드(여의도): 벽면마다 그림의 창 주기를 잰다(winfaces.js). 타일이 올라올 때 그 그림을 한 번 읽어 면 단면에 모은다.
+  let winEst = null, winDirty = false, winTabAt = 0, winSource = 'off';
+  const readTile = (() => { let g = null; return (bmp) => {
+    if (!g) { const c = document.createElement('canvas'); c.width = c.height = 256; g = c.getContext('2d', { willReadFrequently: true }); }
+    g.clearRect(0, 0, 256, 256); g.drawImage(bmp, 0, 0); return g.getImageData(0, 0, bmp.width, bmp.height).data; }; })();
+  const onTile = MAP.windows ? (z, tx, ty, bmp) => {
+    if (!winEst || !winEst.covers(z, tx, ty)) return;
+    winEst.add(z, tx * 256, ty * 256, bmp.width, bmp.height, readTile(bmp), z * 1e7 + ty * 1e4 + tx);
+  } : undefined;
   let R;
-  try { R = createRenderer(canvas, assets, proj, { look: LOOK0, hiSprites: (SS) => (castReg ? withCastHi(hiSpritesSteps(scene, proj, SS), castReg, SS) : hiSpritesSteps(scene, proj, SS)) }); } catch (e) { console.error(e); throw new NoWebGL('그래픽(WebGL2) 화면을 만들지 못했습니다.'); }
+  try { R = createRenderer(canvas, assets, proj, { look: LOOK0, winGrid: !!MAP.windows, onTile, hiSprites: (SS) => (castReg ? withCastHi(hiSpritesSteps(scene, proj, SS), castReg, SS) : hiSpritesSteps(scene, proj, SS)) }); } catch (e) { console.error(e); throw new NoWebGL('그래픽(WebGL2) 화면을 만들지 못했습니다.'); }
   // 메모리가 모자라면 iOS·안드로이드가 컨텍스트를 빼앗는다. 복구는 새로고침뿐이라 안내만 띄운다.
   let lost = false;
   canvas.addEventListener('webglcontextlost', (e) => {
@@ -113,6 +124,23 @@ async function boot() {
     const groundAt = (y) => -((proj.H / 2 - y) * proj.m + proj.cy) * proj.ey[2] / proj.vd[2] - proj.camDotVd;
     const depthAt = (x, y) => { const o = (y * DW + x) * 4, d = proj.decodeDepth(dp[o], dp[o + 1]); return Number.isFinite(d) ? d : groundAt(y + 0.5); };
     R.setStaticLights(buildStaticLights({ w: W, h: H, cls }, movers.lamps, proj, MAP.palace, MAP.uplights));   // 룩 2 야간 정적 광원
+    // 미리 계산한 면(winfaces.json)이 있고 이 지도와 맞으면 읽기만 한다(타일 읽기·추정 없음). ?winfaces=live = 실행 중 계산(비교용)
+    const wf = MAP.windows && assets.winfaces && !['0', 'live'].includes(params.get('winfaces'))
+      ? unpackWinFaces(assets.winfaces, { W, H, sem: sp, inflateRaw, fromB64: (b) => Uint8Array.from(atob(b), (ch) => ch.charCodeAt(0)) }) : null;
+    if (typeof wf === 'string') console.warn('winfaces.json 을 쓰지 않고 실행 중에 계산합니다:', wf);
+    assets.winfaces = null;
+    if (wf && typeof wf === 'object') { R.setWinFaces(wf.faceBytes); R.setWinTab(wf.tab, ...wf.tabSize); winSource = 'json'; }
+    else if (MAP.windows && params.get('winfaces') !== '0') try {   // ?winfaces=0 = 면 격자 없이(예전 식, 비교용)
+      const G = buildFaces({ proj, depth: dp, sem: sp });
+      // 면 종류는 바탕 그림(z1, 또는 통짜 bg.png 를 한 칸 건너 읽기)으로
+      const bw = assets.bg.width, k = Math.round(bw / W), bp = readPixels(assets.bg);
+      let base = bp;
+      if (k > 1) { base = new Uint8Array(W * H * 4); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) base.set(bp.subarray(((y * k) * bw + x * k) * 4, ((y * k) * bw + x * k) * 4 + 4), (y * W + x) * 4); }
+      classifyFaces(G, base);
+      winEst = createWinEstimator(G);
+      if (k === 2) winEst.add(2, 0, 0, bw, assets.bg.height, bp);   // 타일 없는 통짜 0.5 m 그림: 처음부터 모은다
+      R.setWinFaces(winEst.faceBytes()); R.setWinTab(winEst.tab, ...winEst.tabSize); winSource = 'live';
+    } catch (e) { console.warn('창 격자 면을 만들지 못해 기본 격자를 씁니다:', e); winEst = null; }
     // 새·사람 행동은 지도 설정으로 켠다(경복궁 전용 장면 좌표에 기대는 것들). 끈 지도는 빈 새 떼, 걷는 사람만.
     const b = MAP.birds ? createBirds({ w: W, h: H, cls }, { seed: Number(params.get('birdseed') || 11), depthAt })
       : { birds: [], step() {}, scare() {}, launch() {}, off: true };
@@ -293,6 +321,7 @@ async function boot() {
     const t = ((state.tod % 24) + 24) % 24;
     env.day = smooth(5.6, 7.4, t) * (1 - smooth(17.6, 19.6, t));
     env.dusk = 4 * env.day * (1 - env.day);
+    env.clock = t;
     env.lateNight = t < 12 ? smooth(0.0, 1.5, t) * (1 - smooth(4.5, 5.6, t)) : smooth(23.0, 24.0, t) * 0.4;
     for (let i = 0; i < 4; i++) {
       const target = i === state.season ? 1 : 0;
@@ -470,6 +499,12 @@ async function boot() {
     // 틸트시프트: 멀리·중간 배율에서만. 가까이 당기면(화면 1px 당 지도 1.3→2.8 px) 사라져 픽셀이 또렷하게 남는다.
     env.tilt = state.tilt ? 1 - smooth(1.3, 2.8, view.scale / cam.dpr) : 0;
     env.tiltR = 4.5 * cam.dpr;
+    if (winEst) {
+      // 새 그림이 모인 면을 다시 잰다(프레임당 3 ms). 면 표는 0.25 초에 한 번만 올린다
+      if (winEst.pending() && winEst.work(3)) winDirty = true;
+      const t = performance.now();
+      if (winDirty && t - winTabAt > 250) { R.setWinTab(winEst.tab, ...winEst.tabSize); winDirty = false; winTabAt = t; }
+    }
     R.render(view, env);
     if (R.F !== lodF) lodLive(lodF = R.F);   // 깊은 단계 표시(탭이 죽었다 다시 열리면 assets.js 가 단계를 낮춘다)
   }
@@ -544,6 +579,7 @@ async function boot() {
     people, castDraw, castReg,
     birds, scareBirds: (x, y, r) => birds.scare(x, y, r), launchBirds: (i) => birds.launch(i),
     applyHash, hashNow,
+    winEst: () => winEst, winSource: () => winSource,
   };
 
   addEventListener('pagehide', () => lodLive(1));

@@ -7,6 +7,28 @@
 const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 import { createBgTiles } from './bgtiles.js';
 import { WIND, CLOUD_GLSL, cloudLean } from './clouds.js';
+import { WINDOW_GLSL, WINDOW_GRID } from './winlights.js';
+import { TAB_W } from './winfaces.js';
+const WGF = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+// 창 격자 모드의 면 텍스처(winfaces.js): uFace = 지도 칸마다 면 번호(RG8, r·256 + g), uFaceTab = 면마다 텍셀 둘(층 격자, 칸 격자·건물 번호)
+const WINFACE_GLSL = `
+uniform sampler2D uFace, uFaceTab;
+const float KZW = VD.z / (1.0 - VD.z * VD.z);   // 벽 위 높이 = KZW·(밑동 깊이 − 지면 깊이)
+int faceAt(ivec2 c){ if (any(lessThan(c, ivec2(0))) || any(greaterThanEqual(c, ivec2(MAPSZ)))) return 0;
+  vec2 rg = floor(texelFetch(uFace, c, 0).rg * 255.0 + 0.5); return int(rg.r * 256.0 + rg.g); }
+// 면 f 의 밑동 깊이(연속 지도 좌표 mc): 같은 면 네 칸 쌍선형(가중치 +1e-3). 없으면 dflt. winfaces.js faceDc 와 같은 식
+float faceDcAt(int f, vec2 mc, float dflt){
+  vec2 t = mc - 0.5; ivec2 i0 = ivec2(floor(t)); vec2 fr = t - vec2(i0);
+  float ws = 0.0, ds = 0.0;
+  for (int k = 0; k < 4; k++) {
+    ivec2 o = ivec2(k & 1, k >> 1), cq = i0 + o;
+    if (faceAt(cq) != f) continue;
+    float d = bgDepth(cq), w = (o.x == 1 ? fr.x : 1.0 - fr.x) * (o.y == 1 ? fr.y : 1.0 - fr.y) + 1.0e-3;
+    ws += w; ds += w * (d - heightOf(cq, d) * VD.z);
+  }
+  return ws > 0.0 ? ds / ws : dflt;
+}
+`;
 // GLSL 실수 리터럴: 정수로 떨어지는 값(여의도 카메라 중심 등)도 소수점을 붙인다
 const GF = (v) => { const t = String(Number(v)); return /[.e]/.test(t) ? t : t + '.0'; };
 const SPR_STRIDE = 9;   // dstX,dstY,w,h, srcX,srcY, depth, kind, param
@@ -700,9 +722,12 @@ void main(){
   o = vec4(s / 6.0, 1.0);
 }`;
 
-const FS_LIT = (P, L2 = false) => COMMON(P, L2) + `
+// WG = 창 격자 모드(지도 설정 windows, winlights.js): 고층 벽면을 층 × 칸으로 켠다. 없으면 예전 식(경복궁)
+const FS_LIT = (P, L2 = false, WG = false) => COMMON(P, L2) + `${WG ? '#define WINGRID' : ''}
 uniform sampler2D uAlbedo, uLight, uSem, uCls;
 uniform float uDay, uDusk, uTime, uLateNight, uDebug;
+uniform float uClock;   // 시각(0~24시): 창 격자 모드의 켜진 비율 곡선
+${WG ? WINDOW_GLSL + WINFACE_GLSL : ''}
 uniform vec4 uSeason;
 uniform vec4 uPalace; // 궁궐 로컬 경계 x0,y0,x1,y1
 out vec4 o;
@@ -906,6 +931,49 @@ void main(){
           if (n > 0.5) dc += ((d0.y - d0.x) * ok.x * ok.y + (d0.w - d0.z) * ok.z * ok.w) / n * ((floor(xc / WCOL) + 0.5) * WCOL - xc);
         }
       }
+#ifdef WINGRID
+      // 창 격자 모드: 벽면(지붕·헬리패드 제외)만. 면 번호가 있으면(winfaces.js) 면의 종류와 그림에서 잰 층·칸 격자를 쓴다.
+      //   높이·가로 위치는 연속 좌표: 벽 위 높이 = KZ·(같은 면 네 칸 쌍선형 밑동 깊이 − 지면 깊이(연속 y)) — winfaces.js 가 그림 px 를 모을 때와 같은 식.
+      // 면 번호가 없으면 예전 식: 커튼월 판정은 1 m·2 m 둘레 여덟 점의 다수결(winGlassC: 푸른 유리·금빛 반사 유리, 어두운 띠·옅은 하늘색 포함)
+      //   → 그림의 줄무늬(밝고 어두운 유리 띠)마다 판정이 갈리지 않는다. 흰 벽(아파트·회색 띠창 건물)은 둘레에 밝은 무채색 벽이 있을 때만 그림의 창 픽셀(푸른 유리 또는 어두운 회색)을 켠다.
+      if (wall > 0.5) {
+        int fid = faceAt(q);
+        vec4 gv = vec4(0.0), gh = vec4(0.0);
+        float bld = floor(dc / ${WGF(WINDOW_GRID.bldBand)});
+        vec2 mc = uF > 1.5 ? fc / uF : vec2(q) + 0.5;
+        if (fid > 0) {
+          gv = texelFetch(uFaceTab, ivec2((fid % ${TAB_W}) * 2, fid / ${TAB_W}), 0);
+          gh = texelFetch(uFaceTab, ivec2((fid % ${TAB_W}) * 2 + 1, fid / ${TAB_W}), 0);
+          bld = gh.w;
+          float dcf = faceDcAt(fid, mc, dc);
+          zc = KZW * (dcf - groundDepth(mc.y));
+          xc = mc.x;
+        }
+        int kind = int(gv.w + 0.5);
+        int ng = 0, nw = 0;
+        int kk = int(max(uF, 1.0));
+        for (int k = 0; k < 8; k++) {
+          int r8 = kk * (1 + (k >> 2));
+          ivec2 o4 = (k & 3) == 0 ? ivec2(r8, 0) : (k & 3) == 1 ? ivec2(-r8, 0) : (k & 3) == 2 ? ivec2(0, r8) : ivec2(0, -r8);
+          vec3 cg = texelFetch(uAlbedo, fbAt(uAlbedo, ivec2(fc) + o4), 0).rgb;
+          float lg = dot(cg, vec3(.3,.59,.11)), sg = max(cg.r, max(cg.g, cg.b)) - min(cg.r, min(cg.g, cg.b));
+          if (winGlassC(cg)) ng++;
+          else if (lg > 0.55 && sg < 0.12) nw++;
+        }
+        float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+        // 면 종류가 정해졌으면 그것(면 전체의 색으로 정함: 63빌딩 아래쪽 어두운 금빛도 커튼월). 아파트 면도 둘레에 흰 벽이 한 점은 있어야 한다(난간·외곽선 제외)
+        bool glassy = kind > 0 ? kind == 1 : ng >= 5;
+        bool homeOk = kind > 0 ? kind == 2 && nw >= 1 : nw >= 2;
+        if (kind == 0) bld += glassy ? 0.0 : 517.0;
+        bool gold = winGold(c);
+        // 붉은 기둥·흰 테는 창이 아니다(금빛 유리는 창). 면이 커튼월로 정해졌으면 어두운 금빛(63빌딩 아래쪽, 초록/빨강 0.6 근처)도 창: 붉은 기둥은 0.55 미만
+        bool frame = (c.r > c.b * 1.08 && sat > 0.12 && !gold && (kind != 1 || c.g < c.r * 0.55)) || (lum > 0.66 && !winGlassC(c));
+        if (glassy ? !frame : homeOk) {
+          vec4 wc = winCell(zc, xc * MPP, bld, glassy, glass > 0.5 || (lum > 0.06 && lum < 0.4 && sat < 0.15), MPP / (uF * EY.z), MPP / uF, uClock, uTime, gv, gh);
+          if (wc.w > 0.5) lit = mix(lit, wc.rgb * (0.58 + 0.6 * lum) * NB, 0.88 * night);
+        }
+      }
+#else
       float fl = floor(zc / 3.3);
       float col = floor(xc / WCOL);
       float bld = floor(dc / 9.0);
@@ -916,6 +984,7 @@ void main(){
         vec3 e = r < thresh * 0.55 ? vec3(1.0,0.83,0.50) : (r < thresh * 0.85 ? vec3(0.98,0.93,0.78) : vec3(0.72,0.86,1.0));
         lit = mix(lit, e * (0.62 + 0.75 * lum) * NB, 0.88 * night);
       }
+#endif
     } else if (sem == 4) {
       // 수면에 비친 궁궐 야간 조명. 물가(위쪽 첫 비수면 줄)를 축으로 뒤집은 점이 불 켜진 궁궐 벽이면 그 빛을 줄무늬로 깬다.
       int k = 0;
@@ -1122,7 +1191,20 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
     // 차량 깊이 코드·그림자는 R 만 읽는다 → R8
     veh: tex(assets.veh), vehDepth: tex(assets.vehDepth, { internal: gl.R8, format: gl.RED }), vehShadow: tex(assets.vehShadow, { internal: gl.R8, format: gl.RED }), people: tex(assets.people),
   };
-  T.cls = assets.cls ? tex(assets.cls, { internal: gl.R8, format: gl.RED }) : T.sem;   // 가림 판정 클래스(검증 오버레이용). 없는 지도는 의미 클래스 맵으로 대신한다
+  T.cls = assets.cls ? tex(assets.cls, { internal: gl.R8, format: gl.RED }) : T.sem;
+  // 창 격자 모드의 면 텍스처(setWinFaces·setWinTab 이 채운다). 그 전에는 1×1 빈 텍스처(면 번호 0 = 예전 식)
+  const rawTex = (internal, format, type, w, h, data) => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, data);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    return t;
+  };
+  if (opts.winGrid) {
+    T.face = rawTex(gl.RG8, gl.RG, gl.UNSIGNED_BYTE, 1, 1, new Uint8Array(2));
+    T.faceTab = rawTex(gl.RGBA32F, gl.RGBA, gl.FLOAT, 1, 1, new Float32Array(4));
+  }   // 가림 판정 클래스(검증 오버레이용). 없는 지도는 의미 클래스 맵으로 대신한다
   const target = (w, h, filter, mip) => {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -1148,7 +1230,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
   //   창은 단계들 중 가장 큰 크기 하나(단계가 바뀌어도 다시 만들지 않는다).
   //   여유(지도 px)는 단계가 깊을수록 줄인다(24·12·6): 창 밖 여유는 화면 밖이고, 텍셀 수를 단계와 무관하게 비슷하게 둔다.
   //   지도 전체 2배 FBO(5504×3392 두 장)는 만들지 않는다.
-  const tiles = !SETS[2] && assets.tiles ? createBgTiles(gl, W, H, assets.tiles, { phone: assets.phone }) : null;
+  const tiles = !SETS[2] && assets.tiles ? createBgTiles(gl, W, H, assets.tiles, { phone: assets.phone, onTile: opts.onTile }) : null;
   const padOf = (F) => (F >= 4 ? Math.ceil(48 / F) : 24);
   const WIN_BUDGET = assets.phone ? 2048 * 2048 : 4096 * 2560, WIN_TILES = assets.phone ? 48 : 200;
   const tileZs = tiles ? tiles.zs.filter((z) => z >= 2) : [];
@@ -1239,7 +1321,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
     if (look === 2 && look2 !== false) {
       if (!look2) {
         try {
-          look2 = { sprite: compile(gl, VS_SPRITE(proj, true), FS_SPRITE(proj, true)), lit: compile(gl, VS_FULL, FS_LIT(proj, true)),
+          look2 = { sprite: compile(gl, VS_SPRITE(proj, true), FS_SPRITE(proj, true)), lit: compile(gl, VS_FULL, FS_LIT(proj, true, !!opts.winGrid)),
             light: compile(gl, VS_LIGHT(proj), FS_LIGHT(true)), screen: compile(gl, VS_FULL, FS_SCREEN(true)),
             bake: compile(gl, VS_BAKE(proj), FS_BAKE(proj)), shade: compile(gl, VS_FULL, FS_SHADE(proj)), bright: compile(gl, VS_FULL, FS_BRIGHT), blur: compile(gl, VS_FULL, FS_BLUR) };
         }
@@ -1247,7 +1329,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
       }
       if (look2) return look2;
     }
-    return look1 ||= { sprite: compile(gl, VS_SPRITE(proj), FS_SPRITE(proj)), lit: compile(gl, VS_FULL, FS_LIT(proj)),
+    return look1 ||= { sprite: compile(gl, VS_SPRITE(proj), FS_SPRITE(proj)), lit: compile(gl, VS_FULL, FS_LIT(proj, false, !!opts.winGrid)),
       light: compile(gl, VS_LIGHT(proj), FS_LIGHT()), screen: compile(gl, VS_FULL, FS_SCREEN()) };
   };
   progs(opts.look === 1 ? 1 : 2);
@@ -1288,7 +1370,15 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
 
   const bind = (unit, t) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); };
 
+  let tabDims = [0, 0];
   return {
+    // 창 격자 모드: 면 번호(지도 칸마다 RG 바이트)와 면 표(RGBA32F, w×h 텍셀)
+    setWinFaces(bytes) { if (!T.face) return; gl.deleteTexture(T.face); T.face = rawTex(gl.RG8, gl.RG, gl.UNSIGNED_BYTE, W, H, bytes); },
+    setWinTab(tab, w, h) {
+      if (!T.faceTab) return;
+      if (tabDims[0] !== w || tabDims[1] !== h) { gl.deleteTexture(T.faceTab); T.faceTab = rawTex(gl.RGBA32F, gl.RGBA, gl.FLOAT, w, h, tab); tabDims = [w, h]; return; }
+      gl.bindTexture(gl.TEXTURE_2D, T.faceTab); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.FLOAT, tab);
+    },
     flatKind: 11,   // 기본 사람 아틀라스를 색 그대로 그리는 kind(emotes.js 가 읽는다)
     gl, W, H,
     // view 를 주면 이번 프레임의 합성 단계(this.F)를 먼저 정한다 → 스프라이트를 그 단계 해상도로 낼 수 있다(this.hi)
@@ -1495,8 +1585,9 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
         bind(2, FL.t); gl.uniform1i(pLit.u.uLight, 2);
         bind(3, T.sem); gl.uniform1i(pLit.u.uSem, 3);
         bind(4, T.cls); gl.uniform1i(pLit.u.uCls, 4);
+        if (T.face) { bind(7, T.face); gl.uniform1i(pLit.u.uFace, 7); bind(8, T.faceTab); gl.uniform1i(pLit.u.uFaceTab, 8); }
         gl.uniform1f(pLit.u.uDay, env.day); gl.uniform1f(pLit.u.uDusk, env.dusk);
-        gl.uniform1f(pLit.u.uLateNight, env.lateNight); gl.uniform1f(pLit.u.uTime, env.time);
+        gl.uniform1f(pLit.u.uLateNight, env.lateNight); gl.uniform1f(pLit.u.uTime, env.time); gl.uniform1f(pLit.u.uClock, env.clock ?? 21);
         gl.uniform1f(pLit.u.uDebug, env.debug ? 1 : 0);
         gl.uniform4fv(pLit.u.uSeason, env.season);
         gl.uniform4fv(pLit.u.uPalace, env.palace);
