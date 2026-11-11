@@ -12,6 +12,7 @@ import { initSnap } from './snap.js';
 import { createFinds } from './finds.js';
 import { createBirds, emitBirds } from './birds.js';
 import { createBgm } from './audio.js';
+import { cloudAmount } from './clouds.js';
 import { buildStaticLights } from './nightlights.js';
 import { createPeople, addCast } from './sim/people.js';
 import { buildCast, extendPeopleAtlas, withCastHi, createCastDraw } from './emotes.js';
@@ -149,6 +150,7 @@ async function boot() {
     season: Number(params.get('season') || 1), seasonW: [0, 0, 0, 0],
     rain: false, debug: false, hud: false, tour: null, time: 0, manual: false,
     tilt: params.get('tilt') !== '0',
+    clouds: params.get('clouds') !== '0',   // 흐르는 구름 그림자(기본 켬, ?clouds=0 또는 칩으로 끔)
     look: LOOK0,
   };
   state.seasonW[state.season] = 1;
@@ -190,6 +192,9 @@ async function boot() {
   const tiltBtn = $('#tilt');
   tiltBtn.setAttribute('aria-pressed', String(state.tilt));
   tiltBtn.onclick = () => { state.tilt = !state.tilt; tiltBtn.setAttribute('aria-pressed', String(state.tilt)); };
+  const cloudBtn = $('#clouds');
+  cloudBtn.setAttribute('aria-pressed', String(state.clouds));
+  cloudBtn.onclick = () => { state.clouds = !state.clouds; cloudBtn.setAttribute('aria-pressed', String(state.clouds)); };
   const lookBtn = $('#look');
   if (lookBtn) lookBtn.onclick = () => { state.look = state.look === 2 ? 1 : 2; };
   const caption = $('#caption');
@@ -297,6 +302,7 @@ async function boot() {
     env.shadowAmt = env.day;
     env.snow = state.seasonW[3] * 0.85;
     env.rain = state.rain ? 1 - state.seasonW[3] : 0;
+    env.cloud = cloudAmount({ day: env.day, rain: env.rain, winter: state.seasonW[3], on: state.clouds });
     env.debug = state.debug; env.time = state.time;
     env.look = state.look;
     const sky = state.look === 2 ? SKY2 : SKY;

@@ -21,7 +21,6 @@ export const MAPS = {
   },
   yeouido: {
     id: 'yeouido', label: '여의도',
-    public: false,                               // 공개 배포에 싣지 않는다(방위 변경·랜드마크 개선 중). 로컬 개발 서버에서만 ?map=yeouido&dev=1 로 본다. 공개할 때 이 줄을 지운다
     dir: 'yeouido',
     map: 'map.json',                             // 지도 고유 값(dir 아래)
     devDir: '_yd_interim',                       // 개발용: 정식 세트(dir)가 아직 없으면 이 임시 세트를 쓴다(공개 배포본에는 없다)

@@ -6,6 +6,7 @@
 //   →  screen : 카메라 변환 + sharp-bilinear 확대 / mip 축소 + 눈·비
 const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 import { createBgTiles } from './bgtiles.js';
+import { WIND, CLOUD_GLSL, cloudLean } from './clouds.js';
 // GLSL 실수 리터럴: 정수로 떨어지는 값(여의도 카메라 중심 등)도 소수점을 붙인다
 const GF = (v) => { const t = String(Number(v)); return /[.e]/.test(t) ? t : t + '.0'; };
 const SPR_STRIDE = 9;   // dstX,dstY,w,h, srcX,srcY, depth, kind, param
@@ -198,8 +199,8 @@ void main(){
   if (sem == 10) {
     // 나뭇잎 흔들림: 수관을 4×3 그림 px 조각(벽돌 배치)으로 나눠 조각마다 1px(돌풍 때 가끔 2px) 가로로 옮긴다.
     // 돌풍 = 북서에서 남동으로 지나가는 띠. 앞머리는 저주파 노이즈로 구불게 해서 직선 띠로 안 보이게.
-    float s = dot(wp.xy, vec2(0.7071, -0.7071)) + 80.0 * vnoise(wp.xy * 0.005);
-    float g1 = fract((s - uTime * 11.0) / 560.0), g2 = fract((s + 190.0 - uTime * 8.0) / 350.0);
+    float s = dot(wp.xy, vec2(${GF(WIND.dir[0])}, ${GF(WIND.dir[1])})) + 80.0 * vnoise(wp.xy * 0.005);   // 바람 방향·속도는 clouds.js WIND(구름 그림자와 같다)
+    float g1 = fract((s - uTime * ${GF(WIND.gust)}) / 560.0), g2 = fract((s + 190.0 - uTime * ${GF(WIND.gust2)}) / 350.0);
     float gust = max(smoothstep(0.0, 0.03, g1) * (1.0 - smoothstep(0.05, 0.16, g1)),
                      0.6 * smoothstep(0.0, 0.04, g2) * (1.0 - smoothstep(0.06, 0.18, g2)));
     float calm = 0.18 + 0.16 * vnoise(wp.xy * 0.02 + uTime * 0.05);
@@ -706,6 +707,7 @@ uniform vec4 uSeason;
 uniform vec4 uPalace; // 궁궐 로컬 경계 x0,y0,x1,y1
 out vec4 o;
 int semAt(ivec2 q){ q = clamp(q, ivec2(0), ivec2(MAPSZ) - 1); return int(texelFetch(uSem, q, 0).r * 255.0 + 0.5); }
+${CLOUD_GLSL}
 bool isGlass(vec3 c){ float l = dot(c, vec3(.3,.59,.11)); return c.r * 1.12 <= c.b && l >= 0.10 && l < 0.62; }
 #ifdef LOOK2
 // ── 룩 2(세련된 픽셀아트): 깊이로 만든 그림자·접지 음영 + 색 보정. 모두 텍셀 단위 계단값(흐림 없음).
@@ -800,11 +802,10 @@ void main(){
   float z = heightOf(q, dq);
   vec3 wp = worldOf(p, d);
   float night = 1.0 - uDay;
-  // 구름 그림자(낮)
+  // 흐르는 구름 그림자(clouds.js): 지면에 붙은 무늬를 해 쪽으로 높이만큼 어긋나게 읽는다(지붕·타워를 타고 넘는다)
   vec2 cw = wp.xy;
   if (uF > 2.5) { vec2 fr = fc / uF - (vec2(p) + 0.5); cw += (fr.x * EX.xy - fr.y * EY.xy) * MPP; }   // z4·z8: 0.5 m 계단 없이 연속 좌표로
-  float cl = fbm(cw * 0.0042 + vec2(uTime * 0.012, uTime * 0.005));
-  c *= 1.0 - 0.13 * uDay * smoothstep(0.50, 0.66, cl);
+  c *= cloudShade(cw, z);
 #ifdef LOOK2
   vec3 amb = mix(vec3(0.12,0.16,0.36), vec3(1.0), uDay);   // 빛 밖은 차가운 남청 어둠
 #else
@@ -1499,6 +1500,7 @@ export function createRenderer(canvas, assets, proj, opts = {}) {
         gl.uniform1f(pLit.u.uDebug, env.debug ? 1 : 0);
         gl.uniform4fv(pLit.u.uSeason, env.season);
         gl.uniform4fv(pLit.u.uPalace, env.palace);
+        { const cl = cloudLean(env.sun); gl.uniform1f(pLit.u.uCloud, env.cloud ?? 0); gl.uniform2f(pLit.u.uCloudLean, cl[0], cl[1]); }
         if (L2) {
           bind(5, FS.t); gl.uniform1i(pLit.u.uStatic, 5); gl.uniform1f(pLit.u.uLampOn, smoothstep(0.2, 0.8, 1 - env.day));   // 황혼에 서서히 켜진다
           gl.uniform3fv(pLit.u.uSun, env.sun); gl.uniform3fv(pLit.u.uShadeCol, env.shadeCol);

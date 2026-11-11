@@ -24,7 +24,9 @@ SOFTWARE.
 The MIT licence above does not cover the data and image files:
 - assets/web-poc/scene.json.gz: road geometry derived from OpenStreetMap,
   (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0.
-- assets/redraw/*.png, assets/web-poc/occlusion_class8.png, pipeline/input/*, og.png:
+- assets/yeouido/map.json: road and path geometry derived from OpenStreetMap,
+  (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0.
+- assets/redraw/*.png, assets/yeouido/*.png, assets/web-poc/occlusion_class8.png, pipeline/input/*, og.png:
   made from the sources listed in CREDITS.md; reuse requires the attributions given there.
 - assets/audio/* (if present): see CREDITS.md.
 - pipeline/refs.json lists third-party photographs by title, author and licence; the photographs are not included.

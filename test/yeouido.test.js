@@ -57,15 +57,14 @@ const load = () => {
 
 test('지도 고르기: ?map= 과 전환 주소', () => {
   assert.equal(mapIdFrom(''), DEFAULT_MAP);
-  // 여의도는 아직 비공개(public: false): 로컬 개발 서버에서 dev=1 을 붙였을 때만 열린다. 공개 사이트에서는 기본 지도로 간다.
-  assert.equal(isPublic('yeouido'), false); assert.deepEqual(publicMaps().map((m) => m.id), ['gyeongbok']);
-  assert.equal(mapIdFrom('?map=yeouido&tod=3', false), DEFAULT_MAP);
-  assert.equal(mapIdFrom('?map=yeouido&dev=1', false), DEFAULT_MAP);
-  assert.equal(mapIdFrom('?map=yeouido', true), DEFAULT_MAP);
+  // 2026-11-12 여의도 공개: dev 없이도 공개 사이트에서 열린다.
+  assert.equal(isPublic('yeouido'), true); assert.deepEqual(publicMaps().map((m) => m.id), ['gyeongbok', 'yeouido']);
+  assert.equal(mapIdFrom('?map=yeouido&tod=3', false), 'yeouido');
+  assert.equal(mapIdFrom('?map=yeouido', true), 'yeouido');
   assert.equal(mapIdFrom('?map=yeouido&dev=1&tod=3', true), 'yeouido');
   assert.equal(mapIdFrom('?map=__proto__'), DEFAULT_MAP);
   assert.equal(mapIdFrom('?map=nowhere'), DEFAULT_MAP);
-  assert.equal(mapUrl('yeouido', 'https://x.test/p/?res=1&tod=9#850,1225,300&s=2'), 'https://x.test/p/?res=1&map=yeouido&dev=1');
+  assert.equal(mapUrl('yeouido', 'https://x.test/p/?res=1&tod=9#850,1225,300&s=2'), 'https://x.test/p/?res=1&map=yeouido');   // 공개 지도라 dev 를 붙이지 않는다
   assert.equal(mapUrl('gyeongbok', 'https://x.test/p/?map=yeouido&dev=1#1,2,3'), 'https://x.test/p/');
   // 여의도에서는 경복궁 전용 기능이 꺼져 있다
   assert.equal(M.palace, null); assert.deepEqual(M.uplights, []);
@@ -233,9 +232,12 @@ test('여의도 자리는 좌표가 아니라 랜드마크 이름으로 적는�
   for (const p of M.places) { assert.ok(p.x === undefined && p.y === undefined, `바로가기 ${p.name}`); spec({ at: p.key || p.at }, `바로가기 ${p.name}`); }
   for (const s of M.shots) { spec(s.a, `둘러보기 ${s.caption}`); spec(s.b, `둘러보기 ${s.caption}`); assert.ok(s.a && s.b); }
   spec(M.firstView.box, '첫 화면');
-  const clip = JSON.parse(fs.readFileSync(path.resolve(here, '../tools/clip.yeouido.json'), 'utf8'));
-  assert.ok(clip.shots[0].a, '영상 첫 샷은 시작 자리가 있어야 한다');
-  for (const s of clip.shots) { spec(s.a, `영상 ${s.id}`); spec(s.b, `영상 ${s.id}`); }
+  const clipF = path.resolve(here, '../tools/clip.yeouido.json');   // 영상 대본은 작업 레포에만 있다(공개본에는 없음)
+  if (fs.existsSync(clipF)) {
+    const clip = JSON.parse(fs.readFileSync(clipF, 'utf8'));
+    assert.ok(clip.shots[0].a, '영상 첫 샷은 시작 자리가 있어야 한다');
+    for (const s of clip.shots) { spec(s.a, `영상 ${s.id}`); spec(s.b, `영상 ${s.id}`); }
+  }
   for (const k of names) assert.ok(scene.anchors[k], `랜드마크 '${k}' 가 map.json 에 없다`);
   // 푼 자리는 지도 안
   for (const s of resolveShots(M.shots, scene.anchors, size)) for (const v of [s.a, s.b]) assert.ok(v[0] >= 0 && v[0] <= proj.W && v[1] >= 0 && v[1] <= proj.H && v[2] > 50, `${s.caption} ${v}`);
