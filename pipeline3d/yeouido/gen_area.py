@@ -295,7 +295,8 @@ def tree(i, x, y, r, mb):
 # ===== gen.py 복사 끝 =====
 
 # ================= 여의도 판: OSM 만으로 임의 지역을 만든다 =================
-# 사용: venv/bin/python gen_area.py <판 A|B> <X0> <Y0> <출력 접두어>
+# 사용: venv/bin/python gen_area.py <판 A|B|C|F> <X0> <Y0> <출력 접두어> [--save-blend <경로.blend>] [--no-render]
+#   --save-blend: 세운 장면(카메라·해·툰 재질·텍스처 포함)을 렌더 직전 상태로 저장한다(../common/blend_save.py). --no-render: 저장만 하고 끝낸다.
 #   X0,Y0 = 판의 6.25 cm 캔버스 좌표(창 왼쪽 위). 환경변수: P3D_W/P3D_H(렌더 px, 기본 1408×1024), P3D_PXR(렌더 m/px, 기본 0.0625;
 #   미리보기는 0.5), P3D_SPP(기본 64), P3D_PASS(1=ID·깊이 패스), P3D_GTEX(지면 텍셀 m, 기본 PXR×0.8)
 # 출력: <출력>.png, _id.png(R·256+G = pass_index), _z.png(깊이 = z0 + v·step, meta 에 기록), _meta.json
@@ -306,6 +307,9 @@ from shapely.strtree import STRtree
 from PIL import ImageColor
 sys.path.insert(0, HERE); from cam import Cam, PX as PX0
 T0 = time.time()
+SAVE_BLEND, NO_RENDER = None, False
+if '--save-blend' in sys.argv: _i = sys.argv.index('--save-blend'); SAVE_BLEND = sys.argv[_i + 1]; del sys.argv[_i:_i + 2]
+if '--no-render' in sys.argv: sys.argv.remove('--no-render'); NO_RENDER = True
 BOARD, X0, Y0, OUT = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
 CAM = Cam(BOARD); EX, EY, VD = CAM.EX, CAM.EY, CAM.VD
 PXR = float(os.environ.get('P3D_PXR', PX0)); WW, WH = int(os.environ.get('P3D_W', 1408)), int(os.environ.get('P3D_H', 1024))
@@ -1154,6 +1158,12 @@ OP = OUT if os.path.isabs(OUT) else f'{HERE}/{OUT}'
 os.makedirs(os.path.dirname(OP) or '.', exist_ok=True)
 sc.render.filepath = OP + '.png'
 print('scene built', 't', round(time.time() - T0, 1), flush=True)
+if SAVE_BLEND:
+    sys.path.insert(0, os.path.join(HERE, '..', 'common')); import blend_save
+    blend_save.save(SAVE_BLEND, dict(map='yeouido', board=BOARD, board_def=CAM.b, window_6p25=[X0, Y0, WX1, WY1], px_m=PXR, render_px=[WW, WH], samples=sc.cycles.samples,
+                    ground_texel_m=GTEX, pxgrid=os.environ.get('P3D_PXGRID', '1'), depth=dict(z0=DZ0, step=DZS, cam_ref=CREF.tolist(), view_dir=VD.tolist()), meta=META),
+                    readme=open(os.path.join(HERE, '..', 'common', 'BLEND-README.md'), encoding='utf-8').read())
+    if NO_RENDER: sys.exit(0)
 bpy.ops.render.render(write_still=True)
 print('beauty done', 't', round(time.time() - T0, 1), flush=True)
 json.dump({'ids': META, 'board': BOARD, 'board_def': CAM.b, 'window_6p25': [X0, Y0, WX1, WY1], 'render_px_m': PXR, 'size': [WW, WH], 'id': 'pass_index = R*256+G',

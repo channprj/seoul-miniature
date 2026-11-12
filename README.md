@@ -10,7 +10,7 @@
 
 ![미리보기](og.png)
 
-*A pixel-art miniature of two Seoul neighbourhoods, the Gyeongbokgung Palace district and Yeouido on the Han River (open it with `?map=yeouido`). Each map is laid out from open map data as a Blender 3D scene, rendered with one fixed orthographic camera, restyled window by window with an Apache-2.0 image-edit model (Qwen-Image-Edit-2511 + Lightning LoRA), checked back against the render to undo what the model invented, and animated in the browser with WebGL2. This repository contains the viewer, the scripts that made the current pictures (`pipeline3d/`), the exact prompts, and notes on how to do the same for another place. Documentation is in Korean.*
+*A pixel-art miniature of two Seoul neighbourhoods, the Gyeongbokgung Palace district and Yeouido on the Han River (open it with `?map=yeouido`). Each map is laid out from open map data as a Blender 3D scene, rendered with one fixed orthographic camera, restyled window by window with an Apache-2.0 image-edit model (Qwen-Image-Edit-2511 + Lightning LoRA), checked back against the render to undo what the model invented, and animated in the browser with WebGL2. This repository contains the viewer, the scripts that made the current pictures (`pipeline3d/`), the exact prompts, and notes on how to do the same for another place. Pictures CC BY 4.0, scene data and Blender files ODbL (also as glTF, plus one glTF per Yeouido landmark), code MIT — reuse them freely with attribution (docs/REUSE.md). Documentation is in Korean.*
 
 ## 어떻게 만들었나
 
@@ -31,7 +31,8 @@
 | [docs/LESSONS.md](docs/LESSONS.md) | 안 됐던 것과 그 이유(3D 판, 이전 2D 판) |
 | [pipeline3d/README.md](pipeline3d/README.md) | 지금 그림을 만든 스크립트, 환경 변수, 입력 자료 받는 곳, 실행 순서 |
 | [docs/APP.md](docs/APP.md) | 뷰어 구조, 자산 형식, 주소 옵션 |
-| [docs/LICENSING.md](docs/LICENSING.md) | 공개 전 라이선스 점검 방법 |
+| [docs/REUSE.md](docs/REUSE.md) | 그림·장면·코드를 가져다 쓰는 조건, 그대로 복사하는 출처 문구, 용도별 안내 |
+| [docs/LICENSING.md](docs/LICENSING.md) | 공개 전 라이선스 점검 방법과 결정 기록 |
 | [docs/PIPELINE-2D-legacy.md](docs/PIPELINE-2D-legacy.md) | 이전 판(2D 색 블록 밑그림) 절차. `pipeline/` 의 도구가 이 판의 것 |
 
 새 동네로 해 보려면 `pipeline3d/yeouido/` 경로를 본으로 삼으세요. OSM 받기부터 굽기까지 이어집니다. 입력 데이터(OSM 원본, 국가유산청 3D, 중간 렌더)와 모델 가중치는 이 저장소에 없습니다.
@@ -72,11 +73,17 @@ npm install && npm test    # 테스트를 돌릴 때만
 건물 배치는 공개 지도 데이터 기반이지만 측량 수준이 아닙니다. 여의도 건물 높이는 OSM 태그가 없으면 건물 종류와 면적으로 추정했습니다. 국가유산청 기록을 쓴 경복궁 전각 46건과 사진을 보고 만든 랜드마크 외의 파사드·지붕·창문·수목은 절차적으로 만들거나 AI 가 그린 장식이고, 사람과 차는 연출입니다.
 지도로 쓰지 마세요.
 
+## 가져다 쓰기
+
+그림·타일·영상·스크린샷은 **CC BY 4.0**, 장면 데이터(`scene.json`, `map.json`)와 3D 장면(`.blend`, `.glb`)은 **ODbL 1.0**, 코드는 **MIT** 입니다. 영상·글·인쇄물·굿즈·게임에 써도 되고 고쳐서 다시 내도 됩니다(프로젝트는 비상업이지만 그림의 상업 이용도 허용합니다). 이 프로젝트와 원천(OpenStreetMap, 경복궁이면 국가유산청)을 함께 표시해 주세요.
+3D 장면(Blender `.blend`, 게임 엔진·웹용 `.glb`, 여의도 랜드마크별 `.glb`)은 파일이 커서 [Releases](https://github.com/midagedev/seoul-miniature/releases)에 있습니다. 경복궁 장면에는 국가유산청 모델 대신 대체 모형이 들어 있고, 직접 받은 모델을 끼우는 스크립트가 있습니다.
+복사해 쓰는 출처 문구, 용도별 안내, 실제 건물 생김새에 관한 주의는 [docs/REUSE.md](docs/REUSE.md).
+
 ## 출처와 라이선스
 
 지도 데이터 © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL) · Overture Maps Foundation · 국토교통부 GIS건물통합정보 · 국가유산청 경복궁 3D 기록(공공누리 제1유형) · 그림 Qwen-Image-Edit-2511 + Lightning 8-step LoRA (Apache-2.0).
 위 기관·단체가 이 작업을 후원하거나 보증한 것은 아닙니다.
 
 - 전체 출처와 조건: [CREDITS.md](CREDITS.md)
-- 코드는 MIT, `assets/` 는 파일별로 다릅니다: [LICENSE](LICENSE)
+- 코드는 MIT, 그림은 CC BY 4.0, 장면 데이터는 ODbL: [LICENSE](LICENSE), 쓰는 법은 [docs/REUSE.md](docs/REUSE.md)
 - 공개 전에 라이선스를 어떻게 점검했는지: [docs/LICENSING.md](docs/LICENSING.md)

@@ -21,12 +21,37 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ---
-The MIT licence above does not cover the data and image files:
-- assets/web-poc/scene.json.gz: road geometry derived from OpenStreetMap,
-  (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0.
-- assets/yeouido/map.json: road and path geometry derived from OpenStreetMap,
-  (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0.
-- assets/redraw/*.png, assets/yeouido/*.png, assets/web-poc/occlusion_class8.png, pipeline/input/*, og.png:
-  made from the sources listed in CREDITS.md; reuse requires the attributions given there.
-- assets/audio/* (if present): see CREDITS.md.
-- pipeline/refs.json lists third-party photographs by title, author and licence; the photographs are not included.
+The MIT licence above does not cover the image, data and audio files below.
+
+1. Pictures: Creative Commons Attribution 4.0 International (CC BY 4.0)
+   https://creativecommons.org/licenses/by/4.0/legalcode
+   Applies to: assets/redraw/*.png, assets/redraw/tiles/*, assets/yeouido/*.png, assets/yeouido/tiles/*, 
+   assets/web-poc/occlusion_class8.png, pipeline/input/*.png, og.png, and
+   screenshots and videos recorded from this site.
+   Give credit in this form (TASL):
+     "Seoul Miniature" by midagedev, https://midagedev.github.io/seoul-miniature/, CC BY 4.0
+     + the source attributions listed in CREDITS.md (at least
+       "Map data (c) OpenStreetMap contributors"; for Gyeongbokgung pictures also
+       "Korea Heritage Service, Gyeongbokgung 3D records, KOGL Type 1").
+   Indicate if you changed the picture. Copy-ready Korean/English credit lines:
+   docs/REUSE.md.
+
+2. Data: Open Database License (ODbL) 1.0
+   https://opendatacommons.org/licenses/odbl/1-0/
+   Applies to: assets/web-poc/scene.json, assets/web-poc/scene.json.gz,
+   assets/yeouido/map.json, assets/yeouido/winfaces.json, and the
+   3D scene files (*.blend, *.glb) and the Yeouido landmark models (*.glb)
+   published on this repository's GitHub Releases.
+   Road, path, building and water geometry derived from OpenStreetMap,
+   (c) OpenStreetMap contributors. If you publicly use an adapted version of
+   these databases, offer it under the ODbL. Pictures rendered from them are
+   Produced Works and only need the attribution.
+   The Gyeongbokgung 3D files contain no Korea Heritage Service models.
+
+3. Upstream sources and their required attributions (OpenStreetMap, Overture
+   Maps, East Asian Buildings, MOLIT building data and Korea Heritage Service
+   3D records under KOGL Type 1, image model licences): CREDITS.md.
+   None of these organisations sponsors or endorses this project.
+
+4. assets/audio/* (if present): not covered by 1-3; see CREDITS.md.
+5. pipeline/refs.json lists third-party photographs by title, author and licence; the photographs are not included.

@@ -1,5 +1,8 @@
 # 파일럿: OSM/V-World 파생 풋프린트로 세부(기와 줄, 창, 옥상 설비)를 가진 새 장면을 만들어 같은 카메라로 렌더.
-#   venv/bin/python gen.py <win_x> <win_y> <out_prefix>
+#   venv/bin/python gen.py <win_x> <win_y> <out_prefix> [--save-blend <경로.blend>] [--no-render]
+#   --save-blend: 세운 장면(카메라·해·재질·텍스처 포함)을 렌더 직전 상태로 저장한다(common/blend_save.py). --no-render: 저장만 하고 끝낸다.
+#   공개 장면(국가유산청 모델 없음)은 P3D_KHS·P3D_KHSP 를 비우고 P3D_KHS_SLOTS(전각 배치 json)·P3D_KHS_GEO(광화문 정합 json)를 주면
+#   전각 자리에 OSM 대체 모형을 세우고 그 오브젝트를 컬렉션 KHS_STANDIN/slot<번호> 에, 자리 표시 빈 오브젝트를 KHS_SLOTS 에 둔다.
 # 원본 .blend / KHS 텍스처는 쓰지 않는다. 텍스처는 여기서 PIL 로 직접 만든다.
 import sys, json, math, random, os
 import numpy as np
@@ -15,7 +18,11 @@ R = ROOT + 'redraw/'
 HERE = os.path.dirname(os.path.abspath(__file__))
 GV2 = os.environ.get('P3D_GROUND', '') == 'v2'  # 3차(연못 지형): 바닥 그림 ground_clean_v2.png·나무 trees_px_v2.json(ground_patch.py) + KHS 배치의 'bridges'(경회루 돌다리). 없으면 기존과 같음.
 import tempfile, atexit, shutil; TEXD = tempfile.mkdtemp(prefix='p3dtex_'); atexit.register(lambda: shutil.rmtree(TEXD, ignore_errors=True))  # 프로세스별 텍스처 폴더(병렬 쓰기 경합 방지)
+SAVE_BLEND, NO_RENDER = None, False
+if '--save-blend' in sys.argv: _i = sys.argv.index('--save-blend'); SAVE_BLEND = sys.argv[_i + 1]; del sys.argv[_i:_i + 2]
+if '--no-render' in sys.argv: sys.argv.remove('--no-render'); NO_RENDER = True
 X0, Y0, OUT = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+if SAVE_BLEND: sys.path.insert(0, os.path.join(HERE, '..', 'common')); import roofgrid
 WW, WH = int(os.environ.get('P3D_W', 1408)), int(os.environ.get('P3D_H', 1024))
 PX, W, H = 0.0625, 22016, 13568
 cam = json.load(open(R + 'hires/camera/nw45w_x8_0p0625_camera.json'))
@@ -153,6 +160,7 @@ def mat_vcol():
     a = nt.nodes.new('ShaderNodeAttribute'); a.attribute_name = 'col'
     nt.links.new(a.outputs['Color'], b.inputs['Base Color']); _mat['vcol'] = m; return m
 
+CREATED = []  # 만든 오브젝트 순서대로(전각 자리 표시용)
 class MB:  # 메시 조립기
     def __init__(s): s.v = []; s.f = []; s.fm = []; s.uv = []; s.mats = []
     def mi(s, m):
@@ -177,7 +185,7 @@ class MB:  # 메시 조립기
         for m in s.mats: me.materials.append(m)
         me.polygons.foreach_set('material_index', s.fm)
         uvl = me.uv_layers.new(name='uv'); flat = [c for f in s.uv for u in f for c in u]; uvl.data.foreach_set('uv', flat)
-        me.update(); o = bpy.data.objects.new(name, me); o.pass_index = idx; bpy.context.scene.collection.objects.link(o); return o
+        me.update(); o = bpy.data.objects.new(name, me); o.pass_index = idx; bpy.context.scene.collection.objects.link(o); CREATED.append(o); return o
 
 def walls(mb, poly, z0, z1, kind, store, seed, flh, bay=None):
     bay = bay or BAY
@@ -321,12 +329,15 @@ def roof(eave, base, z_e, sty, seed, idx, form='hip', tier=None):
     colv = np.zeros(gx.shape + (4,)); colv[:] = TILE[0]; colv[rib > 0.8] = TILE[1]; colv[rib < 0.12] = TILE[2]; colv[(step > 0.88) & (rib < 0.8)] = TILE[2]
     colv[ridge] = np.array(lin(rdgc)); colv[d1 < 0.14] = TILE[3]
     colv[gw] = np.array(lin('#e6dcc6' if sty != 'palace' else '#a8442f')); colv[tw] = np.array(lin('#a03a2c' if sty == 'palace' else '#efe8d6')); colv[tw & (d1 >= (tier[0] if tier else 0))] = np.array(lin('#2b4a3f' if sty == 'palace' else '#6a4630'))
+    if SAVE_BLEND:  # 공개 .blend: 메시 대신 높이·색 그림 + 지오메트리 노드(같은 정점·면을 Blender 가 다시 만든다, common/roofgrid.py)
+        o = roofgrid.build('roof%d' % idx, idx, xs, ys, z, colv, inside, mat_vcol(), TEXD, bpy.context.scene.collection.objects.link); CREATED.append(o)
+        return slope, ax
     idxm = -np.ones(gx.shape, int); idxm[inside] = np.arange(inside.sum())
     V = np.stack([gx[inside], gy[inside], z[inside]], 1)
     a_, b_, c_, d_ = idxm[:-1, :-1], idxm[:-1, 1:], idxm[1:, 1:], idxm[1:, :-1]; ok = (a_ >= 0) & (b_ >= 0) & (c_ >= 0) & (d_ >= 0)
     me = bpy.data.meshes.new('roof%d' % idx); me.from_pydata(V.tolist(), [], np.stack([a_[ok], b_[ok], c_[ok], d_[ok]], 1).tolist()); me.materials.append(mat_vcol())
     ca = me.color_attributes.new('col', 'FLOAT_COLOR', 'POINT'); ca.data.foreach_set('color', colv[inside].ravel())
-    me.update(); o = bpy.data.objects.new('roof%d' % idx, me); o.pass_index = idx; bpy.context.scene.collection.objects.link(o)
+    me.update(); o = bpy.data.objects.new('roof%d' % idx, me); o.pass_index = idx; bpy.context.scene.collection.objects.link(o); CREATED.append(o)
     return slope, ax
 
 def roofed(poly, idx, seed, sty='hanok', eave_h=3.0, z0=0.0, form=None, tier=False, platform=None):
@@ -463,6 +474,40 @@ def khs_place():
     if bad_: raise RuntimeError('KHS 텍스처 경로 미해결 %d: %s' % (len(bad_), bad_[:3]))
     print('khs models', nk, names_, flush=True)
 
+# ---------- 공개 장면: 국가유산청 전각 자리(모델은 넣지 않고 OSM 대체 모형에 표시만) ----------
+# KHS 를 켠 렌더(KPL)에서 빠졌을 오브젝트 = 같은 규칙(덮임 50% 초과, osm_k, 지붕 속 나무)으로 고른 대체 모형. insert_khs.py 가 이 표시를 읽어 바꿔 끼운다.
+SLOTF = os.environ.get('P3D_KHS_SLOTS', '')
+SLOTS = json.load(open(SLOTF))['models'] if SLOTF and not KPL and os.path.exists(SLOTF) else {}
+SFP = {n_: unary_union([Polygon(c_).buffer(0) for c_ in v_['footprint']]) for n_, v_ in SLOTS.items()}
+if SLOTS:
+    KSUN = Euler((math.radians(50), 0, math.radians(-28))).to_matrix() @ Vector((0, 0, -1))
+    SLOTS = {n_: v_ for n_, v_ in SLOTS.items() if khs_inwin(SFP[n_], v_['zmax'])}; SFP = {n_: SFP[n_] for n_ in SLOTS}
+SFP_ALL = unary_union(list(SFP.values())) if SLOTS else None
+SFP_B = unary_union([g_ for n_, g_ in SFP.items() if not SLOTS[n_].get('keep_trees')]) if SLOTS else None
+SSKIPK = {k_: n_ for n_, v_ in SLOTS.items() for k_ in v_.get('osm_k', [])}
+KGEO_SLOT = json.load(open(os.environ['P3D_KHS_GEO']))['khs'] if os.environ.get('P3D_KHS_GEO') and os.path.exists(os.environ['P3D_KHS_GEO']) else None
+def slot_of(p, k=None):
+    if k is not None and k in SSKIPK: return SSKIPK[k]
+    if not SLOTS or p.is_empty or p.area <= 0 or not SFP_ALL.intersects(p): return None
+    if SFP_ALL.intersection(p).area / p.area <= 0.5: return None
+    return max(SFP, key=lambda n_: SFP[n_].intersection(p).area)
+def slot_tree(x_, y_):
+    if not SLOTS or SFP_B is None or not SFP_B.contains(Point(x_, y_)): return None
+    return next((n_ for n_, g_ in SFP.items() if not SLOTS[n_].get('keep_trees') and g_.contains(Point(x_, y_))), None)
+SLOT_COLS = {}
+def slot_key(name): return 'gwanghwamun' if name == 'gwanghwamun' else 'slot%d' % SLOTS[name]['pass_index']
+def tag(mark, name, why):
+    if name is None: return
+    key = slot_key(name)
+    if key not in SLOT_COLS:
+        top_ = bpy.data.collections.get('KHS_STANDIN') or bpy.data.collections.new('KHS_STANDIN')
+        if top_.name not in sc.collection.children: sc.collection.children.link(top_)
+        SLOT_COLS[key] = bpy.data.collections.new(key); top_.children.link(SLOT_COLS[key])
+    for o_ in CREATED[mark:]:
+        o_['khs_slot'] = key; o_['khs_standin'] = why; o_.name = key + '_' + o_.name
+        for c_ in list(o_.users_collection): c_.objects.unlink(o_)
+        SLOT_COLS[key].objects.link(o_)
+
 # ---------- 장면 ----------
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene; META = {1: 'ground'}
@@ -472,9 +517,11 @@ for i, b in enumerate(blds):
     c = np.mean(np.array(b['rings'][0]), 0)
     if not inwin(c, b['h']): continue
     if KPL and khs_cov(Polygon(b['rings'][0]).buffer(0)) > 0.5: continue  # KHS 전각이 대신 선다
+    mk = len(CREATED)
     if b['type'] == 'hanok_roof_inferred':
         roofed(Polygon(b['rings'][0], b['rings'][1:]), 10000 + i, b['seed'], 'hanok', min(3.4, max(2.7, b['h'] - 1.0))); META[10000 + i] = 'hanok'
     else: modern(b, 10000 + i); META[10000 + i] = b['type']
+    if SLOTS: tag(mk, slot_of(Polygon(b['rings'][0]).buffer(0)), 'city_building')
     n += 1
 print('city buildings', n, flush=True)
 
@@ -503,6 +550,7 @@ for k, e in enumerate(raw):
     if KPL and (k in KSKIPK or khs_cov(p) > 0.5): continue  # KHS 전각이 대신 선다
     idn = 12000 + k; seed = 7000 + k; name = t.get('name', '') or PMETA.get(e['id'], {}).get('name', ''); pm = PMETA.get(e['id'])
     if name == '광화문' and USE_KHS: continue  # 국가유산청 모델로 대체
+    mk = len(CREATED); sl = 'gwanghwamun' if (name == '광화문' and KGEO_SLOT) else (slot_of(p, k) if SLOTS else None)
     gk = next((g for g in GATES if g in name), None)
     if gk: gate(p, idn, seed, *GATES[gk]); META[idn] = 'palace'
     elif (palpoly is not None and palpoly.contains(p.centroid) and not (pm and pm.get('type') == 'modern')) or t.get('historic') or t.get('building') in ('temple', 'shrine', 'pavilion'):
@@ -521,6 +569,7 @@ for k, e in enumerate(raw):
             fac = {3: 'office_stone', 4: 'curtain_glass', 5: 'resi_tower', 6: 'civic_stone'}.get(kd) or rr.choice(['brick', 'stucco', 'stucco'])
             modern({'rings': [[tuple(q) for q in ring]], 'h': fl * 3.3, 'seed': seed, 'fac': fac, 'flh': 3.3, 'storefront': rr.random() < .3, 'parapet': True, 'penthouse': rr.random() < .25,
                     'roofcol': rr.choice(['roof_green', 'roof_green', 'roof_concrete', 'roof_dark'])}, idn); META[idn] = 'tower' if fl >= 9 else 'lowrise'
+    if sl: tag(mk, sl, 'osm_building')
     m += 1
 print('osm buildings', m, flush=True)
 
@@ -555,7 +604,8 @@ if USE_KHS and inwin(KG, 20, 900):
     root.rotation_euler = (0, 0, math.radians(KGEO['theta_deg'])); root.location = (KG[0], KG[1], 0.03)
     META[2] = 'khs'; print('KHS', sorted(o.name for o in new if o.type == 'MESH'), flush=True)
 if KPL: khs_place()
-if GV2 and KPL:  # 3차: 배치 항목의 돌다리(지도 좌표 p0→p1, 폭 w, 윗면 높이 z0→z1 경사, 두께 0.5 m, 양쪽 난간 0.3×0.45 m). 섬 모델 pass_index 로 묶는다.
+BRIDGE_SRC = KPL or SLOTS  # 공개 장면에서도 돌다리는 세운다(국가유산청 모델이 아니라 이 스크립트가 만드는 것)
+if GV2 and BRIDGE_SRC:  # 3차: 배치 항목의 돌다리(지도 좌표 p0→p1, 폭 w, 윗면 높이 z0→z1 경사, 두께 0.5 m, 양쪽 난간 0.3×0.45 m). 섬 모델 pass_index 로 묶는다.
     def _prism(mb_, a_, b_, w_, za_, zb_, th_, m_):
         d_ = np.subtract(b_, a_); d_ = d_ / np.linalg.norm(d_); n_ = np.array([-d_[1], d_[0]]) * w_ / 2
         top_ = [(*(np.add(a_, -n_)), za_), (*(np.add(b_, -n_)), zb_), (*(np.add(b_, n_)), zb_), (*(np.add(a_, n_)), za_)]
@@ -563,7 +613,7 @@ if GV2 and KPL:  # 3차: 배치 항목의 돌다리(지도 좌표 p0→p1, 폭 w
         mb_.face(top_, m_); mb_.face(bot_[::-1], m_)
         for k_ in range(4): mb_.face([bot_[k_], bot_[(k_ + 1) % 4], top_[(k_ + 1) % 4], top_[k_]], m_)
     nb_ = 0
-    for n_, v_ in KPL.items():
+    for n_, v_ in BRIDGE_SRC.items():
         for b_ in v_.get('bridges', []):
             mb_ = MB(); p0_, p1_ = np.array(b_['p0']), np.array(b_['p1']); d_ = (p1_ - p0_) / np.linalg.norm(p1_ - p0_); nn_ = np.array([-d_[1], d_[0]])
             _prism(mb_, p0_, p1_, b_['w'], b_['z0'], b_['z1'], 0.5, mat_flat('#bdb6a6'))
@@ -583,7 +633,9 @@ for wi, e in enumerate(json.load(open(R + 'osm_walls.json'))['elements']):
         part = substring(ln, max(0, si * ln.length / nseg - 0.3), min(ln.length, (si + 1) * ln.length / nseg + 0.3))
         if part.length < 0.3 or not (inwin(part.coords[0]) or inwin(part.coords[-1])): continue
         if KPL and khs_cov(part.buffer(0.45, cap_style=2, join_style=2)) > 0.5: continue  # KHS 모델의 담·문 구간
+        mk = len(CREATED)
         roofed(part.buffer(0.45, cap_style=2, join_style=2), 21000 + wi, e['id'] % 9973, 'wall', hh); META[21000 + wi] = 'wall'; wl += 1
+        if SLOTS: tag(mk, slot_of(part.buffer(0.45, cap_style=2, join_style=2)), 'wall')
 print('wall pieces', wl, flush=True)
 
 tn = 0
@@ -591,7 +643,8 @@ for (tid, tx, ty, tw_, th_, cnt) in json.load(open(f'{HERE}/trees_px_v2.json' if
     r = max(1.4, min(4.5, tw_ * PX / 2)); g = unproj(tx, ty, 2.2 + r * 0.9)
     if not inwin(g, 8): continue
     if KPL and KFP_B is not None and KFP_B.contains(Point(g[0], g[1])): continue  # KHS 전각 지붕 속 나무
-    tree(tid, g[0], g[1], r); META[22000 + tid] = 'tree'; tn += 1
+    mk = len(CREATED); tree(tid, g[0], g[1], r); META[22000 + tid] = 'tree'; tn += 1
+    if SLOTS: tag(mk, slot_tree(g[0], g[1]), 'tree')
 print('trees', tn, flush=True)
 
 M = 1400; OUTS = OUT.replace('/', '_')
@@ -614,6 +667,30 @@ sc.view_settings.view_transform = 'Standard'; sc.render.image_settings.file_form
 os.makedirs(os.path.dirname(f'{HERE}/{OUT}') or '.', exist_ok=True)
 sc.render.filepath = f'{HERE}/{OUT}.png'
 print('scene built', flush=True)
+if SAVE_BLEND:
+    from mathutils import Euler as _E
+    scol = None
+    def _slot_empty(key, props, loc, theta):
+        global scol
+        if scol is None: scol = bpy.data.collections.new('KHS_SLOTS'); sc.collection.children.link(scol)
+        e_ = bpy.data.objects.new(key, None); e_.empty_display_type = 'ARROWS'; e_.empty_display_size = 6.0
+        e_.location = loc; e_.rotation_euler = (0, 0, math.radians(theta)); scol.objects.link(e_)
+        for k_, v_ in props.items(): e_[k_] = v_ if isinstance(v_, (int, float, str, bool)) else json.dumps(v_, ensure_ascii=False)
+        e_['standin_objects'] = len(SLOT_COLS[key].objects) if key in SLOT_COLS else 0
+    for n_, v_ in SLOTS.items():
+        _slot_empty(slot_key(n_), dict(khs_model=n_, pass_index=v_['pass_index'], theta=v_['theta'], tx=v_['tx'], ty=v_['ty'], tz=v_.get('tz', 0.0), grade=v_.get('grade', ''),
+                    keep_trees=bool(v_.get('keep_trees')), has_ground=bool(v_.get('has_ground')), osm_k=v_.get('osm_k', []),
+                    source='국가유산청 경복궁 3D 기록(digital.khs.go.kr), 공공누리 제1유형 — 이 파일에는 들어 있지 않음'), (v_['tx'], v_['ty'], v_.get('tz', 0.0)), v_['theta'])
+    if KGEO_SLOT and 'gwanghwamun' in SLOT_COLS:
+        _slot_empty('gwanghwamun', dict(khs_model='광화문 3D 기록(SM_GwanghwamunComplex.fbx)', pass_index=2, theta=KGEO_SLOT['theta_deg'], tx=KGEO_SLOT['tx_local'], ty=KGEO_SLOT['ty_local'], tz=0.03,
+                    source='국가유산청 광화문 3D 기록(digital.khs.go.kr), 공공누리 제1유형 — 이 파일에는 들어 있지 않음'), (KGEO_SLOT['tx_local'], KGEO_SLOT['ty_local'], 0.03), KGEO_SLOT['theta_deg'])
+    sys.path.insert(0, os.path.join(HERE, '..', 'common')); import blend_save
+    blend_save.save(SAVE_BLEND, dict(map='gyeongbokgung', window_px=[X0, Y0, WW, WH], px_m=PX, canvas_px=[W, H], samples=sc.cycles.samples,
+                    slots=sorted(SLOT_COLS), meta=META), readme=open(os.path.join(HERE, '..', 'common', 'BLEND-README.md'), encoding='utf-8').read())
+    if NO_RENDER:
+        try: os.remove(f'{HERE}/tmp_ground_{OUTS}.png')
+        except OSError: pass
+        sys.exit(0)
 bpy.ops.render.render(write_still=True)
 json.dump(META, open(f'{HERE}/{OUT}_meta.json', 'w'))
 if os.environ.get('P3D_PASS', '1') == '1':  # ID(R=상위, G=하위 바이트)·깊이(2040 + v×0.025 m, 16비트를 R,G 로) 패스
