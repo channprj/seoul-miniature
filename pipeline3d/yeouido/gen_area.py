@@ -305,7 +305,8 @@ from shapely.geometry import LineString, box, MultiPolygon
 from shapely.ops import unary_union, substring
 from shapely.strtree import STRtree
 from PIL import ImageColor
-sys.path.insert(0, HERE); from cam import Cam, PX as PX0
+AREA = os.environ.get('P3D_AREA', HERE)   # 다른 지역: 그 지역의 cam.py·lm_build.py 가 있는 폴더(예: ../teheran). 장면 자료는 P3D_SCENE(기본 AREA/scene.json)
+sys.path.insert(0, AREA); from cam import Cam, PX as PX0
 T0 = time.time()
 SAVE_BLEND, NO_RENDER = None, False
 if '--save-blend' in sys.argv: _i = sys.argv.index('--save-blend'); SAVE_BLEND = sys.argv[_i + 1]; del sys.argv[_i:_i + 2]
@@ -315,7 +316,7 @@ CAM = Cam(BOARD); EX, EY, VD = CAM.EX, CAM.EY, CAM.VD
 PXR = float(os.environ.get('P3D_PXR', PX0)); WW, WH = int(os.environ.get('P3D_W', 1408)), int(os.environ.get('P3D_H', 1024))
 SC = PXR / PX0; WX1, WY1 = X0 + WW * SC, Y0 + WH * SC
 GTEX = float(os.environ.get('P3D_GTEX', PXR * 0.8)); FINE = GTEX <= 0.15
-S = json.load(open(HERE + '/scene.json'))
+S = json.load(open(os.environ.get('P3D_SCENE', AREA + '/scene.json')))
 META = {1: 'ground'}
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -893,6 +894,7 @@ def smooth_obj(o, deg=30.0):
     me.shade_smooth(); me.set_sharp_from_angle(angle=math.radians(deg)); me.update()
 # [랜드마크 개선] 사진 대조판 빌더(lm_build.py)가 위의 b63·assembly·hyundai·church 등을 덮어쓴다
 exec(compile(open(HERE + '/lm_build.py', encoding='utf-8').read(), HERE + '/lm_build.py', 'exec'))
+if AREA != HERE: exec(compile(open(AREA + '/lm_build.py', encoding='utf-8').read(), AREA + '/lm_build.py', 'exec'))   # 지역 빌더가 위 공용 빌더·표(LMC, LMB, LMN …)를 고쳐 쓴다
 # ---------- 건물 ----------
 LMP = {k: unary_union([P(r) for r in v['rings']]).buffer(1.5) for k, v in S['landmarks'].items()}
 OFFK = ('office', 'commercial', 'retail', 'hotel', 'public', 'government', 'yes', 'part', 'mixed_use', 'bank')
@@ -1140,7 +1142,7 @@ BC = CAM.unproj(CAM.W / 2, CAM.H / 2, 0); CREF = np.array(BC) - VD * 3000.0
 bcx, bcy = CAM.SX0 + CAM.W * PX0 / 2, CAM.SY1 - CAM.H * PX0 / 2
 wcx, wcy = CAM.SX0 + (X0 + WX1) / 2 * PX0, CAM.SY1 - (Y0 + WY1) / 2 * PX0
 dz = [(np.array(CAM.unproj(X, Y, zz)) - CREF) @ VD for X in (0, CAM.W) for Y in (0, CAM.H) for zz in (0, 360)]
-DZ0, DZS = math.floor(min(dz) - 20), 0.05
+DZ0, DZS = math.floor(min(dz) - 20), float(os.environ.get('P3D_DZS', 0.05))   # 화면 세로가 약 2100 m 를 넘는 판은 깊이 단위를 키운다(16비트 한도)
 assert (max(dz) - DZ0) / DZS < 65000, 'depth range'
 cd = bpy.data.cameras.new('cam'); cd.type = 'ORTHO'; cd.ortho_scale = max(WW, WH) * PXR; cd.clip_start = 1; cd.clip_end = 9000
 co = bpy.data.objects.new('cam', cd); sc.collection.objects.link(co); sc.camera = co

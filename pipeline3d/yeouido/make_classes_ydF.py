@@ -4,9 +4,9 @@
 # 지면(ID 1) 픽셀은 깊이로 월드 점을 되살려(z 포함) 지면 분류 래스터에서 찾는다 → 수면(WL −1.8 m)·호안 경사도 정확한 자리.
 import json, sys, os, numpy as np
 from PIL import Image
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from cam import Cam, PX
+sys.path.insert(0, os.environ.get('P3D_AREA', os.path.dirname(os.path.abspath(__file__)))); from cam import Cam, PX   # 다른 지역: P3D_AREA(cam.py 폴더), YD_PASS, YD_BOARD, YD_CLS, P3D_PXR
 Image.MAX_IMAGE_PIXELS = None
-D = 'halfF'; NI, NJ, TW, TH = 8, 8, 2752, 1696; K = 4; PXT = 0.125
+D = os.environ.get('YD_PASS', 'halfF'); NI, NJ, TW, TH = 8, 8, 2752, 1696; K = 4; PXT = float(os.environ.get('P3D_PXR', 0.125))
 # 번호표(경복궁 판 0–11 체계를 잇는다; 4·7 은 여의도에 없음)
 NAMES = {0: '바탕 지면(주거·상업 부지, 나대지, 모래)', 1: '도로(간선·이면 차도)', 2: '광장·보도(보도, 산책로, 자전거길, 포장 광장, 주차장, 놀이터)', 3: '잔디·숲 바닥(일반 잔디, 경기장, 숲 바닥)',
          4: '(미사용: 경복궁 마당)', 5: '강물(한강)', 6: '일반 건물(저층, 합성 저층, 아파트, 공원 정자)', 7: '(미사용: 경복궁 한옥)', 8: '타워(h≥45 m 업무 빌딩)',
@@ -27,7 +27,7 @@ def obj_class(kind):
 # 프롬프트용 랜드마크 맵(창 안 비율 판정, 타워형 구분). 63 은 타워 본체만 2, 포디움은 13. 10 이상 = 낮은(타워 아닌) 랜드마크
 LMK = {'assembly': 1, '63': 2, 'parc1': 3, 'parc2': 4, 'ifc1': 5, 'ifc2': 5, 'ifc3': 5, 'conrad': 5, 'lg': 6, 'fki': 7, 'anchor': 8, 'post': 8,
        '국회의원회관': 9, '국회도서관': 9, '국회의정관': 9, '국회소통관': 9, '국회박물관': 9, 'hyundai': 10, 'church': 11, 'kbs': 12, '63_podium': 13, 'ifc_gate': 14, 'fki_hall': 16}   # [6차] 16 = FKI 컨퍼런스센터(새 종류 landmark:fki_hall, 낮은 랜드마크)
-cam = Cam('F'); gj = json.load(open('clsF/ground_cls.json')); G = np.asarray(Image.open('clsF/ground_cls.png'))
+CLSP = os.environ.get('YD_CLS', 'clsF/ground_cls'); cam = Cam(os.environ.get('YD_BOARD', 'F')); gj = json.load(open(CLSP + '.json')); G = np.asarray(Image.open(CLSP + '.png'))
 gx0, gy1, GT = gj['gx0'], gj['gy1'], gj['GTEX']
 cls = np.zeros((NJ * TH // K, NI * TW // K), np.uint8); lmm = np.zeros_like(cls); zs = []; unk = set(); lut_cache = {}
 ONLY = [tuple(map(int, x.split('_'))) for x in os.environ['YD_TILES'].split(',')] if os.environ.get('YD_TILES') else None   # 시험용 일부 타일

@@ -1,9 +1,10 @@
 # [2차] 이동 스프라이트(열차·버스·배) 경로 자료. 정지 조건 렌더에는 굽지 않고, 앱이 경복궁 판의 차량처럼 실행 시 상자 모형으로 그려 움직인다(app/src/vehicles.js·movers.js 방식).
 # 사용: ../gyeongbokgung/venv/bin/python export_movers.py  → movers/C_movers.json
 # 좌표: scene.json 과 같은 지역 좌표(m, EPSG:5186 − org), z = 레일·노면·수면 높이(m). 판 C 카메라로 화면 투영은 cam.py Cam('C').proj.
-import json, math, os, numpy as np
+import json, math, os, sys, numpy as np
 from shapely.geometry import LineString, Polygon, Point
 from shapely.ops import unary_union, linemerge
+sys.path.insert(0, os.environ.get('P3D_AREA', os.path.dirname(os.path.abspath(__file__))))   # 다른 지역: P3D_AREA(cam.py 폴더), 작업 폴더에서 실행
 from cam import Cam
 BOARD = os.environ.get('YD_BOARD', 'C')   # [5차] YD_BOARD=F → movers/F_movers.json
 S = json.load(open('scene.json')); C = Cam(BOARD)
@@ -43,14 +44,15 @@ for i, r in enumerate(S['roads']):
         out['bus_lanes'].append({'id': len(out['bus_lanes']), 'road_idx': i, 'name': r['name'], 'highway': r['hw'], 'dir': d, 'length': round(g.length, 2), 'a': key(q[0]), 'b': key(q[-1]),
                                  'pts': [[round(float(x), 2), round(float(y), 2), round(float(h) + 0.05, 2)] for (x, y), h in zip(q, zz)]})
 # 배: 한강버스(여의도선착장 정차)와 유람선. OSM 에 항로가 없어 섬 북쪽 물가에서 띄운 선으로 만든다(추정).
-isl = Polygon(json.load(open('island.json'))[0])
-riv = max([g for g in getattr(WATER, 'geoms', [WATER])], key=lambda g: g.area)
+HAS_ISL = os.path.exists('island.json')   # 섬 윤곽이 없는 지역(강이 없는 판)은 배 경로를 만들지 않는다
+isl = Polygon(json.load(open('island.json'))[0]) if HAS_ISL else None
+riv = max([g for g in getattr(WATER, 'geoms', [WATER])], key=lambda g: g.area) if HAS_ISL else None
 def river_line(d):
     ring = isl.buffer(d, join_style=1).exterior.intersection(riv.buffer(-40)).intersection(REG)
     segs = [g for g in getattr(ring, 'geoms', [ring]) if g.geom_type == 'LineString']
     return max(segs, key=lambda g: g.length) if segs else None
 stops = [s for s in S.get('transit', {}).get('stations', []) if '선착장' in s['name']]
-for nm, d, kind, loop in (('한강버스(상·하행, 여의도선착장 정차)', 230.0, 'river_bus', False), ('유람선 순환(이랜드크루즈 선착장 발착, 추정)', 420.0, 'cruise', True)):
+for nm, d, kind, loop in ((('한강버스(상·하행, 여의도선착장 정차)', 230.0, 'river_bus', False), ('유람선 순환(이랜드크루즈 선착장 발착, 추정)', 420.0, 'cruise', True)) if HAS_ISL else ()):
     g = river_line(d)
     if g is None: continue
     q = np.array(g.coords); q = q[::max(1, len(q) // 200)]

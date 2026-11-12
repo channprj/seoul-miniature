@@ -6,7 +6,7 @@
 import json, sys, os, numpy as np
 from PIL import Image
 Image.MAX_IMAGE_PIXELS = None
-D = 'halfF'; NI, NJ, TW, TH = 8, 8, 2752, 1696; W, H = NI * TW, NJ * TH
+D = os.environ.get('YD_PASS', 'halfF'); NI, NJ, TW, TH = 8, 8, 2752, 1696; W, H = NI * TW, NJ * TH   # 다른 지역: YD_PASS=<타일 폴더>, 판·px 는 타일 meta 에서 읽는다
 check_only = '--check-only' in sys.argv
 rep = {'tiles': {}, 'seams': {}}; meta = {}; depth = None; bad = []
 small = Image.new('RGB', (W // 4, H // 4))
@@ -41,8 +41,8 @@ for suf in ('', '_id', '_z'):
     if not check_only:
         Image.fromarray(big).save(f'{D}/cond{suf}.png', compress_level=3); print('saved', suf, flush=True)
     del big
-json.dump({'ids': meta, 'board': 'F', 'board_def': m['board_def'], 'size': [W, H], 'render_px_m': 0.125, 'px_m': 0.125,
-           'board_def_note': 'board_def 의 W·H 는 6.25 cm 기준(44032×27136). 12.5 cm px → 화면 m: u = SX0 + X·0.125, v = SY1 − Y·0.125', 'source': '12.5 cm 직접 렌더(gen_area.py F, P3D_PXR=0.125)', 'tiles': [NI, NJ, TW, TH],
+json.dump({'ids': meta, 'board': m['board'], 'board_def': m['board_def'], 'size': [W, H], 'render_px_m': m['render_px_m'], 'px_m': m['render_px_m'],
+           'board_def_note': 'board_def 의 W·H 는 6.25 cm 기준(44032×27136). 12.5 cm px → 화면 m: u = SX0 + X·0.125, v = SY1 − Y·0.125', 'source': f"직접 렌더(gen_area.py {m['board']}, P3D_PXR={m['render_px_m']})", 'tiles': [NI, NJ, TW, TH],
            'id': 'pass_index = R*256+G (cond_id.png)', 'depth': depth}, open(f'{D}/meta.json', 'w'), ensure_ascii=False)
 rep['bad'] = bad; json.dump(rep, open(f'{D}/stitch_report.json', 'w'), ensure_ascii=False, indent=1)
 print('ids', len(meta), 'bad', len(bad)); [print(' ', b) for b in bad[:40]]

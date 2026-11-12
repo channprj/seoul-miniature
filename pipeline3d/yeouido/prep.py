@@ -1,13 +1,13 @@
 # OSM 원자료(osm/*.json) → 지역 좌표(m) 장면 자료 scene.json.  사용: ../gyeongbokgung/venv/bin/python prep.py
 # 좌표: EPSG:5186(중부원점 TM) 에서 ORG 를 뺀 값. x=동, y=북. 원점은 63빌딩 근처.
-import json, math, random, collections, zlib
+import json, math, random, collections, zlib, os
 import numpy as np
 import shapely
 from shapely.geometry import Polygon, LineString, Point, MultiPolygon, box
 from shapely.ops import unary_union, polygonize, linemerge
 from shapely.strtree import STRtree
 
-ORG = [194700.0, 546700.0]
+ORG = json.loads(os.environ.get('P3D_ORG', '[194700.0, 546700.0]'))   # 다른 지역: P3D_ORG='[x, y]'(EPSG:5186 m), 작업 폴더(osm/ 가 있는 곳)에서 실행
 def tm5186(lon, lat):
     a, f = 6378137.0, 1 / 298.257222101; e2 = f * (2 - f); ep2 = e2 / (1 - e2); lat0, lon0 = np.radians(38.0), np.radians(127.0)
     def M(p): return a * ((1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * p - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * np.sin(2 * p) + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * np.sin(4 * p) - (35 * e2 ** 3 / 3072) * np.sin(6 * p))
@@ -274,6 +274,7 @@ print('wrote scene.json')
 # ---------------- 랜드마크 윤곽(전용 모델·건물별 설정의 기준) ----------------
 LM = {'63': ('w', 64989671), 'parc1': ('w', 874639189), 'parc2': ('w', 874639190), 'ifc1': ('w', 621752526), 'ifc2': ('w', 621752527), 'ifc3': ('w', 621752528),
       'conrad': ('w', 500362301), 'lg': ('r', 6033900), 'fki': ('w', 681805210), 'anchor': ('w', 1267509202), 'post': ('w', 681807943), 'assembly': ('w', 270596342)}
+if os.environ.get('P3D_LM'): LM = {k: tuple(v) for k, v in json.loads(os.environ['P3D_LM']).items()}   # 다른 지역의 랜드마크 표: {"키": ["w"|"r", OSM id]}
 els = {(e['type'][0], e['id']): e for e in L('buildings') + L('rel_buildings')}
 scene['landmarks'] = {}
 for k, key in LM.items():
