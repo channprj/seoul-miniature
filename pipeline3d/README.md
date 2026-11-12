@@ -28,6 +28,8 @@
 | `yeouido/build_assets_yd.py` | 굽기 | cache → lock → quant → maps → tiles → mapjson → keys |
 | `teheran/fetch_osm.sh`, `teheran/prep_extra.py` | 입력·장면 자료 | 테헤란로: OSM 받기(건물은 여섯 칸으로 나눠서) + Overture 풋프린트, `yeouido/prep.py` 결과에 건물 보충·큰길가 높이·랜드마크 윤곽·지하철 출입구·왕릉·교량 높이를 더한다 |
 | `teheran/cam.py`, `teheran/lm_build.py` | 카메라·빌더 | 판 T(θ −24°, 15.625 cm/px). 랜드마크(위워크타워·GT타워·코엑스 등), 기와지붕 전각, 봉분 언덕, 홍살문, 공사 현장(가림벽·굴착·버팀보·골조·타워크레인). `yeouido/gen_area.py` 가 `P3D_AREA` 로 읽는다 |
+| `teheran/plaza_samseong.py` | 빌더 | 삼성역 광장: 선큰 마당(밀레니엄 광장), 달걀꼴 조형탑, 판석·화단·채광창·가로등, 호텔 앞 천막, 공사 야적장(벽화 담장·창고·크롤러 크레인·펌프카). `lm_build.py` 가 끝에서 읽는다. 자리는 `prep_extra.py` 가 `scene.json` 의 `samseong` 에 적는다 |
+| `teheran/patch.sh`, `teheran/patch_tiles.py` | 부분 굽기 | 한 구역만 고쳤을 때: 그 타일을 고치기 전·후 코드로 각각 렌더해 달라진 화소만 지금 자산에 덧입힌다(팔레트·다른 타일은 그대로) |
 | `teheran/render_tiles.sh`, `teheran/build_assets_th.py`, `teheran/run.sh` | 렌더·굽기 | 8×8 타일 렌더, 양식 패스 없이 조건 렌더를 그대로 굽는 굽기(여의도 굽기의 단계 함수를 부른다), 처음부터 끝까지의 순서 |
 | `gyeongbokgung/gen.py` | Blender 장면 + 렌더 | 경복궁 장면(한옥·궁궐·담·나무·국가유산청 모델 배치) |
 | `gyeongbokgung/osm_blds.py`, `prep_ground.py` | 입력 | OSM 건물 보충, 지면 그림·지면 분류 |
@@ -160,6 +162,21 @@ PY=/path/to/python-with-bpy bash ../../pipeline3d/teheran/run.sh      # OSM 받�
 ```
 
 Apple M5 Pro(15코어)에서 64타일 렌더(48 spp, 2프로세스 × 7스레드)가 약 30분, 굽기가 몇 분 걸렸습니다. 장면을 고친 뒤에는 `passT/` 의 해당 타일 파일을 지우고 `render_tiles.sh` 를 다시 돌리면 그 타일만 렌더합니다.
+
+### 한 구역만 고치기(부분 굽기)
+
+전체 굽기는 64타일 조건 렌더가 모두 있어야 하고, 팔레트를 새로 뽑으므로 타일 6천 장이 다 바뀝니다. 한 구역의 장면만 고쳤다면(예: 삼성역 광장) 그 타일만 다시 렌더해 덧입힙니다.
+
+```bash
+cd work/teheran                                                       # osm/ 이 있는 작업 폴더. assets/teheran 은 기준 커밋 그대로여야 한다
+PY=/path/to/python-with-bpy bash ../../pipeline3d/teheran/patch.sh 6_1 HEAD --landmark 'millennium|코엑스 밀레니엄 광장|place|1189.5,519.5,0'
+```
+
+- `patch.sh` 는 기준 커밋(`HEAD`)의 코드로 「고치기 전」 타일을, 작업 트리의 코드로 「고친 뒤」 타일을 렌더합니다. 두 렌더가 같은 OSM 자료·같은 표본 수라서, ID·깊이가 다르거나 색이 뭉쳐서 다른 화소가 곧 고친 자리입니다(새 물체의 그림자 포함). OSM 을 새로 받으면 가로수 몇 그루가 공개판과 달라질 수 있는데, 그런 차이는 두 렌더에 똑같이 들어 있어 덧입히는 범위에 들지 않습니다.
+- `patch_tiles.py` 는 그 화소만 지금 팔레트(128색)로 양자화해 z8 타일에 넣고, z4·z2·z1·`bg.png`·`bg_1x.png` 는 그 화소가 든 칸만 다시 줄입니다. 깊이·분류·수관 맵은 전체 굽기의 `step_maps` 를 그 타일만 채운 캐시로 돌려 달라진 칸만 옮깁니다. `--landmark` 로 `map.json` 에 자리 이름을 더하고, `--manifest` 로 `assets.manifest.json` 의 sha256 을 고칩니다.
+- 새 색은 팔레트에 있는 색 가까이로 고르세요(분홍·주황처럼 팔레트에 없는 색은 가장 가까운 벽돌색·노랑으로 바뀝니다). 달라진 화소가 타일 가장자리에 닿으면 경고가 나오니 이웃 타일을 더해 다시 돌립니다.
+- 지면 ID(1)로 세운 낮은 면은 굽기에서 높이 −1.55 m 아래가 물로 분류됩니다(선큰 마당 바닥을 −1.4 m 에 둔 까닭). 물가처럼 도려낸 구덩이의 비탈을 빼려면 빌더가 전역 `NOSKIRT`(다각형)를 둡니다.
+- 삼성역 광장 한 타일(48 spp)은 Apple M6(12코어)에서 렌더 한 번에 약 50초, 덧입히기에 15초쯤 걸렸고, 바뀐 파일은 타일 21장과 맵·목록 일곱 장입니다.
 
 ## 경복궁 순서
 

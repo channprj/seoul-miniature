@@ -1260,8 +1260,8 @@ export function createPeople(scene, grid, opts = {}) {
     for (const c of cityRun) for (let d = 20; d < c.L - 20; d += 60) { pointAt(c.pts, c.cum, d, P3); riverPts.push([P3[0], P3[1]]); }
     const rp = () => pick(riverPts);
     const P = (k) => A[k] || null;
-    // 사진: 물빛광장·문화의마당·국회 앞·63빌딩 앞
-    for (const [k, n] of [['mulbit', 3], ['park_plaza', 2], ['assembly', 3], ['63', 1], ['hangang', 2]]) if (P(k)) for (let i = 0; i < n; i++) mkPhoto(P(k), 10, k === 'assembly' ? 140 : 90, i === 0);
+    // 사진: 물빛광장·문화의마당·국회 앞·63빌딩 앞, 삼성역 밀레니엄 광장
+    for (const [k, n] of [['mulbit', 3], ['park_plaza', 2], ['assembly', 3], ['63', 1], ['hangang', 2], ['millennium', 2]]) if (P(k)) for (let i = 0; i < n; i++) mkPhoto(P(k), 10, k === 'assembly' ? 140 : 90, i === 0);
     // 국회 앞 안내 관광(작은 무리)
     if (P('assembly')) {
       const offs = block(6);
@@ -1275,7 +1275,7 @@ export function createPeople(scene, grid, opts = {}) {
         { legs: 4, minLeg: 10, maxLeg: 36, speed: 1.05, stopT: [3, 8], stop: chatStop, gap: 0.8, bits: BIT.PAVE | BIT.DIRT, want: (sc) => E.tod >= 11.45 + sc.nightKey * 0.25 && E.tod < 13.05 - sc.nightKey * 0.1 && !E.rain });
     }
     // 광장의 친구 무리(셀카·수다)와 강변 연인
-    for (const c of [P('mulbit'), P('park_plaza'), P('mulbit'), P('hangang'), P('park'), rp(), rp(), rp()]) {
+    for (const c of [P('mulbit'), P('park_plaza'), P('mulbit'), P('hangang'), P('park'), P('millennium'), P('millennium'), rp(), rp(), rp()]) {
       if (!c) continue;
       const n = 3 + ri(2), ang = sideAng();
       mkTroupe('friends', c, 6, 120, Array.from({ length: n }, (_, k) => ({ off: [Math.cos(ang) * k * 1.05, Math.sin(ang) * k * 1.05], pal: palNormal(), lag: k * 0.2 })),
@@ -1290,7 +1290,7 @@ export function createPeople(scene, grid, opts = {}) {
         { legs: 4, minLeg: 14, maxLeg: 40, speed: 0.85, stopT: [4, 10], stop: coupleStop, gap: 0.75, bits: BIT.PAVE | BIT.DIRT, want: (sc) => sc.nightKey <= Math.max(E.keep, E.tod >= 17 && E.tod < 22.5 ? 0.9 : 0) });
     }
     if (P('mulbit')) for (let k = 0; k < 3; k++) mkSplash(P('mulbit'));
-    for (const c of [P('mulbit'), P('park_plaza')]) if (c) mkBusker(c);
+    for (const c of [P('mulbit'), P('park_plaza'), P('millennium')]) if (c) mkBusker(c);
     // 벤치(그늘 아래): 공원·강변 보행로 옆
     for (let k = 0; k < 18; k++) { const c = k < 8 && P('park') ? P('park') : rp(); if (c) mkBench(c, 5, k < 8 ? 330 : 120, BIT.PAVE | BIT.DIRT, k % 3 === 2); }
     // 공원 앵커도 강변 띠도 없는 지도(강이 없는 판)에서는 자리가 없다 → 건너뛴다

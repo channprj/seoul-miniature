@@ -19,7 +19,8 @@ LM_OBJ = [('wework', '위워크타워(선릉)', 'tower', ['landmark:wework']), (
           ('parnas', '파르나스타워', 'tower', ['landmark:parnas']), ('coex', '코엑스', 'landmark', ['landmark:coex']), ('gfc', '강남파이낸스센터', 'tower', ['landmark:gfc']),
           ('db', 'DB금융센터', 'tower', ['landmark:db']), ('posco', '포스코센터', 'tower', ['landmark:posco_e', 'landmark:posco_w']), ('gt', 'GT타워', 'tower', ['landmark:gt']),
           ('samsung', '삼성 서초사옥', 'tower', ['landmark:samsung_e', 'landmark:samsung_c', 'landmark:samsung_l']), ('centerfield', '센터필드', 'tower', ['landmark:cf_e', 'landmark:cf_w']),
-          ('gs', 'GS타워', 'tower', ['landmark:gs']), ('meritz', '메리츠타워', 'tower', ['landmark:meritz']), ('glass', '글라스타워', 'tower', ['landmark:glass'])]
+          ('gs', 'GS타워', 'tower', ['landmark:gs']), ('meritz', '메리츠타워', 'tower', ['landmark:meritz']), ('glass', '글라스타워', 'tower', ['landmark:glass']),
+          ('millennium', '코엑스 밀레니엄 광장', 'landmark', ['landmark:millennium'])]   # 삼성역 광장의 선큰 마당(plaza_samseong.py)
 LM_AREA = [('seolleung', '선릉과 정릉(선정릉)', [('grass', '삼릉공원 / 서울 선릉과 정릉')])]
 STEPS = ['cache', 'quant', 'maps', 'tiles', 'mapjson']
 

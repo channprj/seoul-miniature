@@ -1,6 +1,7 @@
 # 테헤란로 지역 빌더. ../yeouido/gen_area.py 가 여의도 lm_build.py 다음에 exec 로 읽는다(같은 전역: MB, mat_flat, grid_tex, gtower, crystal, toonify, LMC, LMB, LMN …).
 # 높이·윤곽은 OSM. 색·입면 구성은 네이버 지도 거리뷰를 눈으로 보고 맞췄다(2026-11-12: 위워크타워, 트레이드타워, 아셈타워, 코엑스, 파르나스타워, 글라스타워, DB금융센터, 강남파이낸스센터, 포스코센터, GT타워, 센터필드, GS타워, 삼성 서초사옥).
 # 거리뷰에서 잘 안 보인 메리츠타워와 모든 옥상·꼭대기 형태는 추정이다. 사진은 저장소에 넣지 않았다. 글자·로고는 넣지 않는다.
+# 삼성역 광장(선큰 마당·조형탑·화단·공사 야적장)은 plaza_samseong.py 에 따로 있고, 이 파일 끝에서 읽는다.
 KBSF.clear(); LMC.clear(); LMB.clear(); LMN.clear()   # 여의도 전용 표(건물 순번·이름)를 비운다
 
 # ---------------- 격자 유리 타워 설정(gtower / crystal) ----------------
@@ -168,7 +169,7 @@ for _k, g_ in enumerate(S.get('gates', [])):   # 홍살문: 붉은 두 기둥 + 
 # ---------------- 공사 현장(OSM landuse=construction) ----------------
 # 삼성역 일대: 현대차 GBC 신사옥 터(골조가 올라오는 코어 3기 + 타워크레인), 영동대로 복합환승센터(GTX: 도로 양옆 개착 구간의 버팀보·복공판·가림막).
 # 그 밖의 공사 터는 가림막 + 장비, 넓으면 굴착 + 골조. 배치는 터 이름·자리로 고정한 난수다. 실제 공정·장비 배치와 다르다(연출).
-SITEK = {'현대자동차 글로벌비즈니스센터': 'gbc', '영동대로복합환승센터': 'gtx'}
+SITEK = {'현대자동차 글로벌비즈니스센터': 'gbc', '영동대로복합환승센터': 'gtx', '삼성역 광장 공사 야적장': 'yard'}   # yard 는 plaza_samseong.py 가 따로 세운다
 PITZ = -1.8   # 굴착 바닥 = gen_area 의 물 바닥 높이(지면 판이 이 높이에 깔려 있다). 실제 깊이(수십 m)는 버팀보로만 암시한다
 CONC, CONC2, RUST, YEL = '#b9b6ad', '#cfccc3', '#9a5a3c', '#e9b52e'
 def tcrane(mb, p, H, ang, jib=44.0, cj=13.0, col=YEL, z0=0.0):
@@ -232,6 +233,7 @@ _pits = []
 for _k, _a in enumerate(AR.get('dirt', [])):
     poly = P(_a['rings'])
     if poly.area < 1500 or not poly.intersects(GBOX): continue
+    if SITEK.get(_a['name']) == 'yard': continue
     kind = SITEK.get(_a['name'], 'lot'); cen = np.array(poly.centroid.coords[0]); rnd = random.Random(zlib.crc32(f"{_a['name']}{round(cen[0])}{round(cen[1])}".encode()))
     road = unary_union([ln.buffer(r['w'] / 2 + 2.5, cap_style=2) for ln, r in _DRV if ln.intersects(poly)] + [Point(0, 0).buffer(.01)])
     inner = poly.difference(road).buffer(-2.0).buffer(0); big = poly.area > 4000
@@ -303,4 +305,5 @@ for _k, _a in enumerate(AR.get('dirt', [])):
                     for q in ([o] if o.geom_type == 'LineString' else [x for x in getattr(o, 'geoms', []) if x.geom_type == 'LineString']):
                         for i_, s_ in enumerate(np.arange(0, q.length, 2.4)): p_ = q.interpolate(float(s_)); mb.box((p_.x, p_.y, 0), .5, .25, .9, mat_flat('#f08a24' if i_ % 2 else '#f3f1ea'))
     if mb.f: mb.build('site%d' % _k, 9700 + _k); META[9700 + _k] = 'landmark:site_' + kind
+exec(compile(open(AREA + '/plaza_samseong.py', encoding='utf-8').read(), AREA + '/plaza_samseong.py', 'exec'))   # 삼성역 광장(선큰 마당은 _pits 에 더한다)
 if _pits: WATERc = unary_union([WATERc] + _pits)   # 굴착 자리는 지면 판에서 도려낸다(gen_area 가 물가처럼 5.5 m 비탈을 두른다). 텍스처는 그대로 흙색

@@ -74,6 +74,20 @@ test('테헤란로 클래스·깊이: 도로·건물·수목이 있고, 궁궐 �
   assert.ok(top > 150 && top < 320, `가장 높은 곳 ${top.toFixed(0)} m`);
 });
 
+test('삼성역 광장: 밀레니엄 광장 선큰 마당이 지면보다 낮고, 둘레는 걸을 수 있는 포장 광장', { skip }, async () => {
+  const { scene, cls, w, heightAt } = await load();
+  const [ax, ay] = scene.anchors.millennium.map(Math.round);
+  let sunk = 0, plaza = 0, n = 0;
+  for (let dy = -40; dy <= 40; dy++) for (let dx = -40; dx <= 40; dx++) {
+    const x = ax + dx, y = ay + dy, c = cls[y * w + x];
+    n++;
+    if (c === 11) plaza++;
+    if (c === 11 && Math.hypot(dx, dy) < 12 && heightAt(x, y) < -0.6) sunk++;   // 마당 바닥 −1.4 m. 깊이 맵은 칸의 가장 가까운 면이라 평지가 약 +0.5 m 로 읽힌다
+  }
+  assert.ok(sunk > 40, `선큰 마당 칸 ${sunk}`);
+  assert.ok(plaza / n > 0.25, `포장 광장 비율 ${(plaza / n).toFixed(2)}`);
+});
+
 test('테헤란로 교통·사람: 차가 차로를 달리고, 사람 장면이 예외 없이 돈다', { skip }, async () => {
   const { scene, cls, w, h, proj, heightAt } = await load();
   assert.ok(scene.lanes.length > 100 && scene.walkers.length > 50);

@@ -1100,6 +1100,7 @@ for g in parts(LAND):
     for t in shapely.constrained_delaunay_triangles(g).geoms:
         q = list(orient(t, 1.0).exterior.coords)[:-1]; mb.face([(x, y, 0.0) for x, y in q], gmat, [uvw(x, y) for x, y in q])
 STEPP = STEPZ.buffer(1.0); shapely.prepare(STEPP); nsk = 0
+NOSK = globals().get('NOSKIRT')   # 지역 빌더가 둘레를 직접 세우는 구덩이(선큰 광장 등): 이 안의 물가 변에는 비탈을 두르지 않는다
 for g in parts(WATERc):
     g = orient(g, 1.0)
     for ring in [g.exterior] + list(g.interiors):
@@ -1121,6 +1122,7 @@ for g in parts(WATERc):
             if abs(a_[1] - b_[1]) < 1e-6 and (abs(a_[1] - GBOX.bounds[1]) < 6 or abs(a_[1] - GBOX.bounds[3]) < 6): continue
             nx_, ny_ = en[i]; na_, nb_ = vn[i], vn[(i + 1) % n_]
             mid = Point((a_[0] + b_[0]) / 2 + nx_ * 2, (a_[1] + b_[1]) / 2 + ny_ * 2)
+            if NOSK is not None and NOSK.contains(mid): continue
             if STEPP.contains(mid):  # 계단식 호안: 디딤 1.375 m × 챌면 0.45 m 네 단
                 prof = [(0.0, 0.0)]
                 for k in range(4): prof += [((k + 1) * REV / 4, k * WL / 4), ((k + 1) * REV / 4, (k + 1) * WL / 4)]
