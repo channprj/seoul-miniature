@@ -1,26 +1,54 @@
-# 서울 미니어처: 경복궁과 여의도
+# 서울 미니어처 · Seoul Miniature
 
-서울의 두 동네를 실제 지도 배치 그대로 옮긴 픽셀아트 미니어처입니다. **경복궁** 일대(약 1.4 km × 0.85 km)와 한강을 낀 **여의도**(약 2.8 km × 1.7 km, 밤섬 포함)가 있습니다.
-시간·계절·날씨가 바뀌고 사람과 차가 움직입니다. 확대하면 그림이 경복궁은 6.25 cm/px, 여의도는 12.5 cm/px 까지 세밀해집니다. 개인 비상업 연구 프로젝트입니다.
+**경복궁과 여의도를 실제 지도 배치 그대로 옮긴, 살아 움직이는 픽셀아트 미니어처.**
+시간·계절·날씨가 바뀌고, 사람과 자전거와 차가 돌아다닙니다. 브라우저에서 바로 열립니다.
 
-**보기**
+**[▶ 경복궁 보기](https://midagedev.github.io/seoul-miniature/) · [▶ 여의도 보기](https://midagedev.github.io/seoul-miniature/?map=yeouido) · [3D 장면 받기](https://github.com/midagedev/seoul-miniature/releases) · [만든 방법](docs/PIPELINE.md) · [쓴 프롬프트](docs/PROMPTS.md) · [가져다 쓰기](docs/REUSE.md)**
 
-- 경복궁: https://midagedev.github.io/seoul-miniature/
-- 여의도: https://midagedev.github.io/seoul-miniature/?map=yeouido
+![여의도 전체](docs/img/yeouido_overview.jpg)
 
-![미리보기](og.png)
+| 경복궁 | 여의도의 밤 |
+|---|---|
+| ![경복궁 광화문 앞](docs/img/gyeongbok.jpg) | ![밤의 여의도 업무지구](docs/img/yeouido_night.jpg) |
 
-*A pixel-art miniature of two Seoul neighbourhoods, the Gyeongbokgung Palace district and Yeouido on the Han River (open it with `?map=yeouido`). Each map is laid out from open map data as a Blender 3D scene, rendered with one fixed orthographic camera, restyled window by window with an Apache-2.0 image-edit model (Qwen-Image-Edit-2511 + Lightning LoRA), checked back against the render to undo what the model invented, and animated in the browser with WebGL2. This repository contains the viewer, the scripts that made the current pictures (`pipeline3d/`), the exact prompts, and notes on how to do the same for another place. Pictures CC BY 4.0, scene data and Blender files ODbL (also as glTF, plus one glTF per Yeouido landmark), code MIT — reuse them freely with attribution (docs/REUSE.md). Documentation is in Korean.*
+![공원의 돗자리, 한강공원, 주차장, 점심시간 업무지구](docs/img/life.jpg)
+
+## 한눈에
+
+- **진짜 배치**: OpenStreetMap 의 건물·도로·강·공원으로 Blender 3D 장면을 코드로 세웠습니다. 경복궁 전각 46건은 국가유산청 3D 기록, 63빌딩·파크원·국회의사당 같은 랜드마크는 사진을 눈으로 보며 모델링했습니다.
+- **그림체만 AI**: 3D 렌더를 270조각으로 나눠 이미지 편집 모델(Qwen-Image-Edit-2511, Apache-2.0)로 픽셀아트 그림체만 입혔습니다. 모델이 지어낸 건물은 렌더와 비교해 지웠습니다(여의도 497개 → 4개).
+- **살아 있는 화면**: 사람 수천 명, 한강 자전거, 차 2,500대, 밤 창문 불빛, 비·눈·구름 그림자. 확대하면 6.25–12.5 cm/px 까지 세밀해집니다.
+- **전부 공개**: 뷰어 코드(MIT), 그림(CC BY 4.0), 3D 장면 `.blend`·`.glb`(ODbL), 그림을 만든 스크립트와 프롬프트 원문까지. 출처만 밝히면 영상·게임·굿즈 등 어디에나 가져다 쓸 수 있습니다.
+
+<details>
+<summary><b>English</b></summary>
+
+A living pixel-art miniature of two Seoul neighbourhoods: the Gyeongbokgung Palace district and Yeouido on the Han River. Time of day, seasons and weather change; thousands of people, bikes and cars move around.
+
+- Each map is laid out from open map data (OpenStreetMap; Korea Heritage Service 3D records for 46 palace halls) as a Blender 3D scene and rendered with one fixed orthographic camera.
+- The render is cut into 270 overlapping windows and restyled with an Apache-2.0 image-edit model (Qwen-Image-Edit-2511 + Lightning LoRA); whatever the model invents is checked against the render and undone.
+- The browser viewer (WebGL2, no build step) uses depth and class maps from the same render to hide cars behind buildings and to animate trees, water, window lights and weather.
+- **Reuse it**: pictures are CC BY 4.0, scene data and the Blender/glTF scenes are ODbL 1.0 ([Releases](https://github.com/midagedev/seoul-miniature/releases)), code is MIT. The exact prompts and scripts are in `docs/PROMPTS.md` and `pipeline3d/`. Documentation is in Korean.
+
+</details>
 
 ## 어떻게 만들었나
 
 1. **배치는 공개 데이터에서.** OpenStreetMap 의 건물 윤곽·높이 태그·도로·교량·수면·녹지·담·나무로 Blender 3D 장면을 코드로 세웁니다. 경복궁 일대는 국토교통부 건물 높이를 더했고, 전각 46건은 국가유산청이 공공누리 제1유형으로 개방한 3D 기록의 형태를 배치했습니다.
-2. **랜드마크는 사진을 보고 모델링.** 63빌딩·파크원·국회의사당 같은 건물은 자유 라이선스 사진을 여러 각도로 눈으로 보고 따로 만들었습니다. 사진은 모델에 넣지 않았습니다.
+2. **랜드마크는 사진을 보고 모델링.** 63빌딩·파크원·국회의사당 같은 건물은 사진을 여러 각도로 눈으로 보고 코드로 만들었습니다. 사진은 모델에 넣지 않았습니다.
 3. **고정 카메라로 조건 렌더.** 정사투영 카메라 하나(35° 내려다봄, 경복궁은 북서쪽·여의도는 남쪽을 봄)로 색·물체 ID·깊이를 22016 × 13568 px 캔버스에 렌더합니다.
 4. **양식만 이미지 모델로.** 색 렌더를 1408 × 1024 px 창 270개(겹침 128 px)로 나눠, 창마다 그 창에 있는 것만 말하는 프롬프트로 다시 그립니다. 창들이 잠재값 하나를 함께 써서 이음매가 거의 없습니다. GPU 3장으로 지도 하나에 약 1시간(경복궁 67분, 여의도 59분) 걸렸습니다.
+
+   ![3D 렌더 → 이미지 모델 → 최종 그림 (여의도 저층 상가)](docs/img/pipeline_style.jpg)
+   *왼쪽부터 3D 렌더, 이미지 모델 결과, 최종 그림. 벽돌·간판·옥상 소품은 모델이 그렸습니다.*
+
 5. **지어낸 것 되돌리기.** 모델은 빈 마당·강물·다리 위에 건물을 지어냅니다. 조건 렌더를 정답지로 그런 곳을 찾아 다시 칠합니다(여의도에서 지어낸 건물 497개 → 4개). 옥상과 랜드마크 벽은 렌더를 그대로 씁니다.
+
+   ![모델이 지어낸 벽돌집을 지운 예 (63빌딩 옆 잔디밭)](docs/img/pipeline_undo.jpg)
+   *가운데: 모델이 63빌딩 옆 잔디밭에 벽돌집 두 채를 지어냈습니다. 오른쪽: 렌더와 비교해 지운 최종 그림.*
+
 6. **줄이고 자르기.** 128색으로 줄이고 확대 단계별 256 px 타일로 자릅니다(지도당 약 6천 장, 90 MB 안팎). 같은 렌더의 깊이·ID 로 가림 판정용 깊이 맵과 분류 맵을 만듭니다.
-7. **브라우저에서 살리기.** WebGL2 뷰어가 깊이 맵으로 차와 사람을 건물 뒤에 가리고, 분류 맵으로 나무 흔들림·물결·창문 불빛·구름 그림자·눈비를 셰이더에서 만듭니다. 사람·차·새는 코드로 그립니다.
+7. **브라우저에서 살리기.** WebGL2 뷰어가 깊이 맵으로 차와 사람을 건물 뒤에 가리고, 분류 맵으로 나무 흔들림·물결·창문 불빛·구름 그림자·눈비를 셰이더에서 만듭니다. 사람·자전거·차·새는 코드로 그립니다.
 
 ## 따라 해 보기
 
@@ -74,6 +102,8 @@ npm install && npm test    # 테스트를 돌릴 때만
 지도로 쓰지 마세요.
 
 ## 가져다 쓰기
+
+![여의도 랜드마크 3D 모델(실제 높이 비율): 국회의사당, 더현대 서울, LG트윈타워, 63빌딩, IFC 서울, 파크원](docs/img/landmarks_glb.jpg)
 
 그림·타일·영상·스크린샷은 **CC BY 4.0**, 장면 데이터(`scene.json`, `map.json`)와 3D 장면(`.blend`, `.glb`)은 **ODbL 1.0**, 코드는 **MIT** 입니다. 영상·글·인쇄물·굿즈·게임에 써도 되고 고쳐서 다시 내도 됩니다(프로젝트는 비상업이지만 그림의 상업 이용도 허용합니다). 이 프로젝트와 원천(OpenStreetMap, 경복궁이면 국가유산청)을 함께 표시해 주세요.
 3D 장면(Blender `.blend`, 게임 엔진·웹용 `.glb`, 여의도 랜드마크별 `.glb`)은 파일이 커서 [Releases](https://github.com/midagedev/seoul-miniature/releases)에 있습니다. 경복궁 장면에는 국가유산청 모델 대신 대체 모형이 들어 있고, 직접 받은 모델을 끼우는 스크립트가 있습니다.
