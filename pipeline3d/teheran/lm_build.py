@@ -1,6 +1,6 @@
 # 테헤란로 지역 빌더. ../yeouido/gen_area.py 가 여의도 lm_build.py 다음에 exec 로 읽는다(같은 전역: MB, mat_flat, grid_tex, gtower, crystal, toonify, LMC, LMB, LMN …).
 # 높이·윤곽은 OSM. 색·입면 구성은 네이버 지도 거리뷰를 눈으로 보고 맞췄다(2026-11-12: 위워크타워, 트레이드타워, 아셈타워, 코엑스, 파르나스타워, 글라스타워, DB금융센터, 강남파이낸스센터, 포스코센터, GT타워, 센터필드, GS타워, 삼성 서초사옥).
-# 거리뷰에서 잘 안 보인 메리츠타워와 모든 옥상·꼭대기 형태는 추정이다. 사진은 저장소에 넣지 않았다. 글자·로고는 넣지 않는다.
+# 거리뷰에서 잘 안 보인 메리츠타워와 모든 옥상·꼭대기 형태는 추정이다. 사진은 저장소에 넣지 않았다. 간판 글자는 거리뷰에서 읽은 것만 signs.py 에서 붙인다(위워크타워는 아래 wework()).
 # 삼성역 광장(원형 광장·내리막 계단·조형탑·화단·공사 야적장)은 plaza_samseong.py 에 따로 있고, 이 파일 끝에서 읽는다.
 KBSF.clear(); LMC.clear(); LMB.clear(); LMN.clear()   # 여의도 전용 표(건물 순번·이름)를 비운다
 
@@ -305,5 +305,6 @@ for _k, _a in enumerate(AR.get('dirt', [])):
                     for q in ([o] if o.geom_type == 'LineString' else [x for x in getattr(o, 'geoms', []) if x.geom_type == 'LineString']):
                         for i_, s_ in enumerate(np.arange(0, q.length, 2.4)): p_ = q.interpolate(float(s_)); mb.box((p_.x, p_.y, 0), .5, .25, .9, mat_flat('#f08a24' if i_ % 2 else '#f3f1ea'))
     if mb.f: mb.build('site%d' % _k, 9700 + _k); META[9700 + _k] = 'landmark:site_' + kind
+exec(compile(open(AREA + '/signs.py', encoding='utf-8').read(), AREA + '/signs.py', 'exec'))   # 랜드마크 간판·전광판
 exec(compile(open(AREA + '/plaza_samseong.py', encoding='utf-8').read(), AREA + '/plaza_samseong.py', 'exec'))   # 삼성역 광장(내리막 계단 자리는 _pits 에 더한다)
 if _pits: WATERc = unary_union([WATERc] + _pits)   # 굴착 자리는 지면 판에서 도려낸다(gen_area 가 물가처럼 5.5 m 비탈을 두른다). 텍스처는 그대로 흙색
