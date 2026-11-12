@@ -152,6 +152,32 @@ vec3 bgRead(ivec2 p, ivec2 fp, int off){
   }
   return texelFetch(uBg, p + ivec2(off, 0), 0).rgb;
 }
+// 겨울 맨가지: 화면 평면(m)을 3.2 m 칸으로 나눠 칸마다 한 그루를 세운다 — 밑동에서 오른 줄기 끝에서 가지 셋이 위로 부채꼴로 뻗고, 가지마다 곁가지 하나.
+// u = 화면 평면 좌표(m, y 는 아래로 +), e = 그림 텍셀 크기(m). → 0 없음, 1 가지(굵기 1 텍셀), 2 누운 가지 바로 위 텍셀(얹힌 눈).
+// 가지가 닿는 범위(옆 3 m, 위 3.5 m)가 칸보다 작아 제 칸·아래 칸과 가까운 쪽 옆 칸만 본다(4 칸 × 선분 7 개).
+int twigSeg(vec2 u, vec2 a, vec2 b, float e){
+  vec2 ba = b - a, v = u - a - ba * clamp(dot(u - a, ba) / dot(ba, ba), 0.0, 1.0); float d = length(v);
+  float th = max(e * 0.62, 0.06);   // 굵기 1 텍셀(아주 고운 단계에서는 12 cm)
+  if (d < th) return 1;
+  return d < th + e && v.y < 0.0 && abs(ba.x) > 0.5 * abs(ba.y) ? 2 : 0;
+}
+int twigAt(vec2 u, float e){
+  const float G = 3.2; vec2 ci = floor(u / G); float sx = fract(u.x / G) < 0.5 ? -1.0 : 1.0; int r = 0;
+  for (int n = 0; n < 4; n++) {
+    vec2 id = ci + vec2((n & 1) == 1 ? sx : 0.0, float(n >> 1));
+    float h1 = hash(id + 2.3), h2 = hash(id + 7.9);
+    vec2 b = (id + vec2(0.2 + 0.6 * h1, 0.5 + 0.45 * h2)) * G, t = b + vec2((h2 - 0.5) * 0.5, -0.9 - 0.4 * h1);
+    int k = twigSeg(u, b, t, e); if (k == 1) return 1;
+    for (int m = 0; m < 3; m++) {
+      float an = (float(m) - 1.0) * 0.85 + (hash(id + float(m) * 3.7 + 1.0) - 0.5) * 0.6, L = 1.2 + hash(id + float(m) * 5.1 + 4.0);
+      vec2 dr = vec2(sin(an), -cos(an)), md = t + dr * L * 0.55;
+      float a2 = an + (hash(id + float(m) + 9.0) < 0.5 ? -0.8 : 0.8);
+      k = twigSeg(u, t, t + dr * L, e); if (k == 1) return 1; r = max(r, k);
+      k = twigSeg(u, md, md + vec2(sin(a2), -cos(a2)) * L * 0.5, e); if (k == 1) return 1; r = max(r, k);
+    }
+  }
+  return r;
+}
 // 그림 텍셀 좌표 a(이 단계의 그림 px)의 색
 vec3 artAt(ivec2 a){
   if (uBgScale > 1.5) {
@@ -317,8 +343,19 @@ void main(){
   }
   // 겨울: 앙상한 나무, 위를 향한 면에 눈, 얼어붙은 연못
   if (uSeason.w > 0.0) {
-    vec3 bare = vec3(0.50,0.45,0.42) * (0.4 + lum * 1.3);
-    if (apm <= 2) c = mix(c, bare, tree * uSeason.w * 0.85);
+    // 나무: 넓은잎나무는 잎을 다 떨군 맨가지(가지 사이로 눈 덮인 땅이 비친다)에 가지 위와 수관 윗면으로 눈이 얹힌다.
+    //       여섯에 하나쯤(그루 번호 해시)은 늘푸른나무: 짙은 초록 수관 윗면에 눈.
+    bool ever = clump2 < 0.16;
+    vec3 under = vec3(0.79,0.84,0.92);   // 가지 사이로 비치는 그늘진 눈밭
+    if (apm <= 2 && tree > 0.5) {
+      // z1·z2: 가지가 텍셀보다 가늘다 → 텍셀 낱알로 섞는다. 멀리서는 잔가지가 눈밭과 섞여 옅은 회갈색 안개처럼 보이므로
+      // 낱알은 드물고(여섯에 하나쯤) 옅게, 밝은 윗면의 일부는 흰 눈, 나머지는 눈밭(그림의 명암을 조금 남긴다)
+      float tw = hash(vec2(fp) + 11.0);
+      vec3 bt = ever ? (lum > 0.27 ? vec3(0.92,0.95,0.99) : vec3(0.33,0.45,0.38) * (0.8 + lum))   // 멀리서는 눈이 더 많이 덮여 보인다(짙은 초록 낱알이 튀지 않게)
+                     : (tw < 0.11 + 0.12 * vnoise(wp.xy * 0.5) ? vec3(0.55,0.49,0.46) * (0.85 + 0.3 * lum)
+                        : (lum > 0.40 && tw > 0.70 ? vec3(0.95,0.97,1.0) : under * (0.88 + 0.24 * lum)));
+      c = mix(c, bt, uSeason.w);
+    }
     float cover;
     if (apm > 2) {
       // z4·z8: 눈을 0.5 m 칸 값의 보간(뿌연 얼룩)이 아니라 이 단계 텍셀에서 끊어 얹는다.
@@ -337,7 +374,17 @@ void main(){
       }
       if (wt) {
         float l2 = mix(lum, dot(texelFetch(uBg, q, 0).rgb, vec3(.3,.59,.11)), 0.45);
-        vec3 ws = l2 > 0.32 ? vec3(0.93,0.95,0.99) : l2 > 0.22 ? vec3(0.83,0.87,0.94) : l2 > 0.13 ? vec3(0.69,0.75,0.84) : vec3(0.54,0.60,0.71);
+        vec3 ws;
+        if (ever) ws = l2 > 0.32 ? vec3(0.93,0.95,0.99) : l2 > 0.23 ? vec3(0.80,0.86,0.91) : l2 > 0.14 ? vec3(0.21,0.35,0.27) : vec3(0.12,0.21,0.17);
+        else {
+          // 맨가지: 가지 텍셀은 짙은 갈색, 누운 가지 바로 위 텍셀은 얹힌 눈
+          vec2 um = am * MPP; float e = MPP / float(apm); int tw = twigAt(um, e);
+          // 텍셀이 굵은 단계(30 cm 안팎)에서는 가지 한 줄이 실제보다 굵게 찍힌다 → 색을 눈밭 쪽으로 옅게 해서 멀리서 검은 낱알로 보이지 않게
+          vec3 twc = mix(vec3(0.36,0.29,0.25), vec3(0.60,0.55,0.53), smoothstep(0.12, 0.34, e));
+          // 수관 윗면(그림에서 밝게 칠한 곳)에는 눈 덩이가 얹힌다. 그 밖은 가지 사이로 비치는 눈밭(그림의 명암을 조금 남겨 덩이가 읽히게)
+          bool lumpS = l2 > 0.30 && vnoise(um * 1.7 + 3.0) > 0.60;
+          ws = tw == 1 ? twc : (tw == 2 || lumpS) ? vec3(0.96,0.97,1.0) : under * (0.90 + 0.22 * l2);
+        }
         c = mix(c, ws, uSeason.w);
         cover = 0.0;
       } else if (flatW > 0.5 || (lawn > 0.5 && (zq < 1.5 || noCrown))) {
@@ -370,7 +417,7 @@ void main(){
       float wall = wallness(p);
       float road = sem == 2 ? 1.0 : 0.0;
       cover = (1.0 - wall) * (0.62 + 0.38 * vnoise(wp.xy * 0.35)) * (1.0 - road * 0.82);
-      cover *= mix(1.0, 0.55 + 0.45 * step(0.35, fine), tree);
+      cover *= 1.0 - tree;   // 나무는 위에서 이미 칠했다
     }
     vec3 snow = vec3(0.90,0.93,0.98) * (0.80 + 0.20 * smoothstep(0.2, 0.8, lum));
     c = mix(c, snow, clamp(cover, 0.0, 1.0) * uSeason.w * (1.0 - water));
