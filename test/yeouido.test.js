@@ -9,7 +9,10 @@ import { MAPS, isPublic, publicMaps, mapIdFrom, mapUrl, DEFAULT_MAP, resolveView
 import { sceneFromMap } from '../src/mapscene.js';
 import { makeProjection, cumLengths, pointAt } from '../src/geom.js';
 import { makeTour } from '../src/tour.js';
-import { createSimpleTraffic } from '../src/sim/simple-traffic.js';
+import { createSimpleTraffic, demandAt, KIND_MIX } from '../src/sim/simple-traffic.js';
+import { createPeople, addCast } from '../src/sim/people.js';
+import { createParking } from '../src/sim/parking.js';
+import { buildCast } from '../src/emotes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const A = path.resolve(here, '../assets/');
@@ -68,7 +71,9 @@ test('지도 고르기: ?map= 과 전환 주소', () => {
   assert.equal(mapUrl('gyeongbok', 'https://x.test/p/?map=yeouido&dev=1#1,2,3'), 'https://x.test/p/');
   // 여의도에서는 경복궁 전용 기능이 꺼져 있다
   assert.equal(M.palace, null); assert.deepEqual(M.uplights, []);
-  assert.equal(M.people, false); assert.equal(M.birds, false); assert.equal(M.finds, false);
+  // 사람은 도시용 장면(profile 'city')으로 켠다. 새·찾아보기는 아직 경복궁만.
+  assert.equal(M.people, true); assert.equal(M.profile, 'city'); assert.equal(M.birds, false); assert.equal(M.finds, false);
+  assert.ok(M.cars >= 1800 && M.cars <= 2500, `차 ${M.cars}`); assert.ok(M.parking > 0);
   for (const m of Object.values(MAPS)) assert.ok(m.places.length >= 2 && m.shots.length >= 2, m.id);
 });
 
@@ -242,4 +247,126 @@ test('여의도 자리는 좌표가 아니라 랜드마크 이름으로 적는�
   // 푼 자리는 지도 안
   for (const s of resolveShots(M.shots, scene.anchors, size)) for (const v of [s.a, s.b]) assert.ok(v[0] >= 0 && v[0] <= proj.W && v[1] >= 0 && v[1] <= proj.H && v[2] > 50, `${s.caption} ${v}`);
   assert.ok(makeTour(resolveShots(M.shots, scene.anchors, size)).total > 30);
+});
+
+// ── 앱 후속 7: 여의도 사람·자전거·세워 둔 차·교통 ─────────────────────────────
+let PS = null;
+const people = () => {
+  if (PS) return PS;
+  const { scene, proj, cls, heightAt } = load();
+  addCast(scene);
+  return (PS = createPeople(scene, { w: cls.w, h: cls.h, cls: cls.ch === 1 ? cls.data : Uint8Array.from({ length: cls.w * cls.h }, (_, i) => cls.data[i * cls.ch]) }, { seed: 5, proj, heightAt, profile: 'city' }));
+};
+const run = (sys, tod, season, rain = 0, n = 90) => { for (let i = 0; i < n; i++) sys.step(1 / 30, { tod, season, rain, view: [0, 0, 2, 2] }); return sys.counts(); };
+
+test('여의도 사람: 공원·강변·업무지구에 붐비고, 경복궁 전용 장면은 없다', { skip }, () => {
+  const sys = people(), { proj, clsAt } = load();
+  assert.equal(sys.city, true);
+  assert.equal(sys.ceremony, null); assert.equal(sys.haechi.length, 0);
+  assert.ok(sys.walkers.length > 2500, `걷는 사람 ${sys.walkers.length}`);
+  const zones = new Set(sys.walkers.map((w) => w.zone));
+  for (const z of ['k', 'r', 'b', 's']) assert.ok(zones.has(z), `동네 ${z}`);
+  const kinds = new Set(sys.scenes.map((s) => s.kind));
+  for (const k of ['picnic', 'lawn', 'ball', 'fish', 'splash', 'lunch', 'friends', 'photo', 'bench', 'busk', 'kite']) assert.ok(kinds.has(k), `장면 ${k}`);
+  for (const k of ['ceremony', 'hanbok', 'pigeon', 'proposal', 'cat']) assert.ok(!kinds.has(k), `경복궁 장면 ${k} 없음`);
+  // 강변 띠: 물(4) 위·밤섬 위에 점이 없다
+  const S = [0, 0, 0];
+  for (const c of [...sys.cityGeo.run, ...sys.cityGeo.bike]) for (const p of c.pts) { proj.project(p[0], p[1], 0, S); assert.notEqual(clsAt(Math.floor(S[0]), Math.floor(S[1])), 4, '강변 띠가 물 위'); }
+  assert.ok(sys.cityGeo.run.reduce((a, c) => a + c.L, 0) > 2000 && sys.cityGeo.bike.reduce((a, c) => a + c.L, 0) > 2000, '강변 띠 2 km 넘게');
+  assert.ok(sys.isleN() > 1000, '밤섬을 막았다');
+  for (const w of sys.walkers) { const p = w.pts[Math.floor(w.pts.length / 2)]; proj.project(p[0], p[1], 0, S); assert.notEqual(clsAt(Math.floor(S[0]), Math.floor(S[1])), 4); }
+  // 사람 수: 시각·계절·비에 따라
+  const noon = run(sys, 13, 0), eve = run(sys, 19.2, 1), night = run(sys, 3, 1), winter = run(sys, 13, 3), rain = run(sys, 13, 1, 1);
+  assert.ok(noon.people > 1500, `봄 한낮 ${noon.people}`);
+  assert.ok(eve.people > noon.people, `한여름 저녁(${eve.people})이 가장 붐빈다(봄 한낮 ${noon.people})`);
+  assert.ok(night.people < noon.people * 0.15, `새벽 3시 ${night.people}`);
+  assert.ok(winter.people < noon.people * 0.8, `겨울 ${winter.people}`);
+  assert.ok(rain.people < noon.people * 0.5, `비 ${rain.people}`);
+  // 점심 무리는 11:30~13:00 에만
+  run(sys, 12.2, 0, 0, 120); assert.ok(sys.scenes.filter((s) => s.kind === 'lunch' && s.on).length >= 6, '점심 무리');
+  run(sys, 15, 0, 0, 120); assert.equal(sys.scenes.filter((s) => s.kind === 'lunch' && s.on).length, 0);
+  // 물놀이는 여름 낮에만
+  run(sys, 14, 1, 0, 120); assert.ok(sys.scenes.some((s) => s.kind === 'splash' && s.on));
+  run(sys, 14, 2, 0, 120); assert.ok(!sys.scenes.some((s) => s.kind === 'splash' && s.on));
+});
+
+test('여의도 자전거: 4~6 m/s, 2~3대 무리·공공자전거 섞임, 강변 띠 위, 화면 방향 4가지', { skip }, () => {
+  const sys = people(), { scene, proj, clsAt } = load();
+  const B = sys.bikes;
+  assert.ok(B.length >= 80, `자전거 무리 ${B.length}`);
+  for (const b of B) assert.ok(b.v >= 4 && b.v <= 6, `속도 ${b.v}`);
+  const crews = B.filter((b) => b.fol.length >= 1).length, share = [...B.map((b) => b.look), ...B.flatMap((b) => b.fol.map((f) => f.look))];
+  assert.ok(crews / B.length > 0.2 && crews / B.length < 0.5, `무리 비율 ${crews / B.length}`);
+  for (const b of B) assert.ok(b.fol.length <= 2);
+  const pub = share.filter((l) => l.frame === 0).length / share.length;
+  assert.ok(pub > 0.2 && pub < 0.45, `공공자전거 비율 ${pub}`);
+  // 여름 저녁에 많고 비 오는 날·새벽엔 적다
+  const eve = run(sys, 19, 1).bikes, night = run(sys, 3, 1).bikes, wet = run(sys, 19, 1, 1).bikes;
+  assert.ok(eve > 120 && night < eve * 0.15 && wet < eve * 0.25, `저녁 ${eve} 새벽 ${night} 비 ${wet}`);
+  // 달린 뒤에도 물 위에 없고, 방향 칸은 화면 진행 방향과 맞는다
+  run(sys, 19, 1, 0, 300);
+  const P = [0, 0, 0], Q = [0, 0, 0], S = [0, 0, 0], T = [0, 0, 0], dirs = new Set();
+  for (const b of B) {
+    const dir = sys.bpos(b, 1, P); dirs.add(dir);
+    proj.project(P[0], P[1], 0, S); assert.notEqual(clsAt(Math.floor(S[0]), Math.floor(S[1])), 4, '자전거가 물 위');
+    // 앱과 같은 현(±1.5 m)으로 화면 진행 방향을 잰다. 띠 끝에서 되돌아오는 자리(앞뒤 방향 칸이 다름)는 건너뛴다.
+    const u0 = b.u, ou = b.ou, A2 = [0, 0, 0];
+    b.ou = b.u = u0 - 1.5; const da = sys.bpos(b, 1, A2); b.ou = b.u = u0 + 1.5; const db = sys.bpos(b, 1, Q); b.u = u0; b.ou = ou;
+    if (da !== dir || db !== dir) continue;
+    proj.project(A2[0], A2[1], 0, S); proj.project(Q[0], Q[1], 0, T);
+    const dx = T[0] - S[0], dy = T[1] - S[1];
+    if (Math.abs(dx) > Math.abs(dy) * 1.5) assert.equal(dir, dx > 0 ? 0 : 1, '옆모습 방향');
+    else if (Math.abs(dy) > Math.abs(dx) * 1.5) assert.equal(dir, dy > 0 ? 2 : 3, '앞·뒷모습');
+  }
+  assert.equal(dirs.size, 4, '네 방향이 다 나온다');
+  // 모형 칸: 도시 지도에만(차체 색 6 × 탄 사람 12 × 방향 4 × 페달 2)
+  const reg = buildCast(scene, { city: true });
+  assert.equal(reg.bike.length, 6); assert.equal(reg.bike[0].length, 12); assert.equal(reg.bike[0][0].length, 4); assert.equal(reg.bike[0][0][0].length, 2);
+  assert.ok(reg.rod && reg.cup);
+});
+
+test('여의도 세워 둔 차: 포장 칸 위, 건물·나무에 가리지 않고, 걷는 길·고속도로 둘레를 비운다', { skip }, () => {
+  const { scene, proj, cls, heightAt, clsAt } = load(), sys = people();
+  const grid = { w: cls.w, h: cls.h, cls: cls.ch === 1 ? cls.data : Uint8Array.from({ length: cls.w * cls.h }, (_, i) => cls.data[i * cls.ch]) };
+  const avoid = [...new Set(sys.walkers.map((w) => w.pts))];
+  const P = createParking(scene, grid, { proj, heightAt, avoid, seed: 7, max: 900 });
+  assert.ok(P.length >= 300 && P.length <= 900, `세워 둔 차 ${P.length}`);
+  const S = [0, 0, 0];
+  for (const v of P) {
+    assert.ok(['sedan', 'suv', 'van'].includes(v.kind) && v.parked);
+    const c = Math.cos(v.th), s = Math.sin(v.th);
+    for (const [u, w] of [[-0.5, -0.5], [-0.5, 0.5], [0.5, -0.5], [0.5, 0.5], [0, 0]]) {
+      const x = v.x + c * u * v.len - s * w * v.wid, y = v.y + s * u * v.len + c * w * v.wid;
+      proj.project(x, y, 0, S); const px = Math.floor(S[0]), py = Math.floor(S[1]);
+      assert.ok([1, 11].includes(clsAt(px, py)), `차체 아래 칸 ${clsAt(px, py)}`);
+      assert.ok(Math.abs(heightAt(px, py)) < 0.5, '위에 가린 것이 없다(깊이 = 땅)');
+    }
+  }
+  for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) assert.ok(Math.hypot(P[i].x - P[j].x, P[i].y - P[j].y) >= 2.6, '겹치지 않는다');
+  for (const ln of scene.lanes) if (/^(trunk|motorway)/.test(String(ln.highway || ''))) for (const p of ln.pts) for (const v of P) assert.ok(Math.hypot(v.x - p[0], v.y - p[1]) > 12, '고속화도로 옆');
+});
+
+test('여의도 교통: 2500대·차종 비율·교차로 양보·시각별 수요, 교착 없음, 다리 위에도 달린다', { skip }, () => {
+  const { scene } = load();
+  assert.ok(demandAt(8) > 0.95 && demandAt(18.5) > 0.95 && demandAt(13) < 0.85 && demandAt(3) < 0.5);
+  const T = createSimpleTraffic(scene, { seed: 7, targetCount: 2500, demand: demandAt(13) });
+  assert.ok(T.all.length > 2300 && T.all.length < 2700, `전체 ${T.all.length}`);
+  assert.ok(Math.abs(T.vehicles.length - T.all.length * demandAt(13)) < 5);
+  const n = {}; for (const v of T.all) n[v.kind] = (n[v.kind] || 0) + 1;
+  for (const [k, p] of KIND_MIX) assert.ok(Math.abs(n[k] / T.all.length - p) < 0.03, `${k} ${(n[k] / T.all.length).toFixed(3)}`);
+  assert.ok(T.boxes.length > 30, `교차로 ${T.boxes.length}`);
+  const still = new Map();
+  let maxStill = 0;
+  for (let i = 0; i < 30 * 150; i++) {
+    if (i === 30 * 50) T.setDemand(1);
+    if (i === 30 * 110) T.setDemand(demandAt(3));
+    T.step(1 / 30);
+    if (i % 15 === 0) for (const v of T.vehicles) { const s = v.v < 0.05 ? (still.get(v) || 0) + 0.5 : 0; still.set(v, s); maxStill = Math.max(maxStill, s); }
+    if (i === 30 * 105) assert.ok(T.vehicles.length > T.all.length * 0.9, `출퇴근 ${T.vehicles.length}`);
+    if (i === 30 * 60) assert.ok(T.vehicles.filter((v) => v.z > 6).length > 100, '다리 위 차');
+  }
+  assert.ok(T.stats.yields > 100, `양보 ${T.stats.yields}`);
+  assert.ok(maxStill < 30, `가장 오래 선 차 ${maxStill} s`);
+  assert.ok(T.vehicles.length < T.all.length * 0.75, `밤으로 가며 줄어든다 ${T.vehicles.length}`);
+  for (const v of T.vehicles) assert.ok(Number.isFinite(v.x + v.y + v.z + v.th));
 });

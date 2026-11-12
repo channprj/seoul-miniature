@@ -10,6 +10,7 @@ import { publicMaps, currentMap, mapUrl, resolveView, resolveBox, resolveShots }
 import { aboutHtml, verifyHtml } from './panels.js';
 import { initSnap } from './snap.js';
 import { createFinds } from './finds.js';
+import { createParking } from './sim/parking.js';
 import { createBirds, emitBirds } from './birds.js';
 import { createBgm } from './audio.js';
 import { cloudAmount } from './clouds.js';
@@ -86,7 +87,7 @@ async function boot() {
   const TOUR = makeTour(resolveShots(MAP.shots, scene.anchors, SIZE)), sampleTour = (t) => TOUR.sample(t);
   // 사람 유형·소품(emotes.js): 옷 색을 팔레트 뒤에 덧붙이고, 전용 모형 칸을 기본 사람 아틀라스 아래에 붙인다
   // 사람 행동(sim/people.js)을 쓰지 않는 지도는 걷는 사람만: 기본 아틀라스 그대로
-  const castReg = MAP.people ? (addCast(scene), buildCast(scene)) : null;
+  const castReg = MAP.people ? (addCast(scene), buildCast(scene, { city: MAP.profile === 'city' })) : null;
   assets.people = castReg ? extendPeopleAtlas(buildPeopleAtlas(scene.walker_palette), castReg) : buildPeopleAtlas(scene.walker_palette);
   // 차량 스프라이트는 코드로 그린다(배경과 같은 픽셀 격자). 교통 sim 이 쓰는 차종·색 조합은 그대로 둔다.
   const va = buildVehicleAtlas(scene, proj);
@@ -102,7 +103,7 @@ async function boot() {
     winEst.add(z, tx * 256, ty * 256, bmp.width, bmp.height, readTile(bmp), z * 1e7 + ty * 1e4 + tx);
   } : undefined;
   let R;
-  try { R = createRenderer(canvas, assets, proj, { look: LOOK0, winGrid: !!MAP.windows, onTile, hiSprites: (SS) => (castReg ? withCastHi(hiSpritesSteps(scene, proj, SS), castReg, SS) : hiSpritesSteps(scene, proj, SS)) }); } catch (e) { console.error(e); throw new NoWebGL('그래픽(WebGL2) 화면을 만들지 못했습니다.'); }
+  try { R = createRenderer(canvas, assets, proj, { look: LOOK0, winGrid: !!MAP.windows, onTile, hiSprites: (SS) => (castReg ? withCastHi(hiSpritesSteps(scene, proj, SS), castReg, SS, proj.ps) : hiSpritesSteps(scene, proj, SS)) }); } catch (e) { console.error(e); throw new NoWebGL('그래픽(WebGL2) 화면을 만들지 못했습니다.'); }
   // 메모리가 모자라면 iOS·안드로이드가 컨텍스트를 빼앗는다. 복구는 새로고침뿐이라 안내만 띄운다.
   let lost = false;
   canvas.addEventListener('webglcontextlost', (e) => {
@@ -111,6 +112,7 @@ async function boot() {
   });
   const movers = createMovers(scene, proj);
   let people = null;   // 사람들의 행동(sim/people.js). 못 만들면 예전처럼 movers 가 걷는 사람만 그린다.
+  let parked = null;   // 세워 둔 차(sim/parking.js, 도시 지도)
   const castDraw = castReg ? createCastDraw(scene, proj) : null;
   // 새: classes.png 로 앉을 곳·돌 곳을 고정 시드로 고른다. 깊이는 앉는 자리에서만 읽고 버린다.
   const birds = (() => {
@@ -144,10 +146,15 @@ async function boot() {
     // 새·사람 행동은 지도 설정으로 켠다(경복궁 전용 장면 좌표에 기대는 것들). 끈 지도는 빈 새 떼, 걷는 사람만.
     const b = MAP.birds ? createBirds({ w: W, h: H, cls }, { seed: Number(params.get('birdseed') || 11), depthAt })
       : { birds: [], step() {}, scare() {}, launch() {}, off: true };
+    const heightAt = (x, y) => (groundAt(y + 0.5) - depthAt(x, y)) * -proj.vd[2];
     if (MAP.people) try {
-      people = createPeople(scene, { w: W, h: H, cls }, { seed: Number(params.get('peopleseed') || params.get('seed') || 5), birds: b, proj,
-        heightAt: (x, y) => (groundAt(y + 0.5) - depthAt(x, y)) * -proj.vd[2] });
+      people = createPeople(scene, { w: W, h: H, cls }, { seed: Number(params.get('peopleseed') || params.get('seed') || 5), birds: b, proj, profile: MAP.profile, heightAt });
     } catch (e) { console.warn('사람 행동을 만들지 못해 걷는 사람만 그립니다:', e); }
+    // 세워 둔 차(도시 지도): 걷는 길·자전거 길 위에는 두지 않는다
+    if (MAP.parking) try {
+      const avoid = people ? [...new Set(people.walkers.map((w) => w.pts)), ...(people.bikeChains || []).map((c) => c.pts)] : scene.walkers.map((w) => w.pts);
+      parked = createParking(scene, { w: W, h: H, cls }, { proj, heightAt, avoid, seed: Number(params.get('seed') || 7), max: Number(params.get('parked') ?? MAP.parking) });
+    } catch (e) { console.warn('세워 둔 차를 만들지 못했습니다:', e); }
     dp = null;   // depthAt 클로저가 18 MB 픽셀 배열을 붙잡지 않게
     return b;
   })();
@@ -160,7 +167,11 @@ async function boot() {
     const mod = await import('./sim/traffic.js');
     if (MAP.traffic === 'simple') {
       // 신호·정지선 데이터가 없는 지도: 차로를 따라 달리는 단순 교통(sim/simple-traffic.js)
-      traffic = (await import('./sim/simple-traffic.js')).createSimpleTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || MAP.cars) });
+      // MAP.cars = 출퇴근 때 대수. 낮·밤에는 시각별 수요(demandAt)만큼만 달린다(?cars= 를 주면 그 대수로 고정)
+      const st = await import('./sim/simple-traffic.js');
+      const fixed = params.has('cars');
+      traffic = st.createSimpleTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || MAP.cars), demand: fixed ? 1 : st.demandAt(Number(params.get('tod') || 9)) });
+      if (!fixed) traffic.demandAt = st.demandAt;
       trafficKind = 'simple';
     } else traffic = mod.createTraffic(scene, { seed: Number(params.get('seed') || 7), targetCount: Number(params.get('cars') || MAP.cars) });   // 도심답게 막히지만 흐르는 수준(교착·강제 제거 0 확인)
   } catch (e) {
@@ -459,6 +470,7 @@ async function boot() {
       pEnv.tod = state.tod; pEnv.day = env.day; pEnv.season = state.season; pEnv.rain = env.rain;
       pEnv.view[0] = v.originX; pEnv.view[1] = v.originY; pEnv.view[2] = v.originX + canvas.width / v.scale; pEnv.view[3] = v.originY + canvas.height / v.scale;
     }
+    if (traffic.demandAt) traffic.setDemand(traffic.demandAt(state.tod));   // 출퇴근 때 더 많이
     while (acc >= SIM_DT && n < 8) { traffic.step(SIM_DT); birds.step(SIM_DT); if (people) people.step(SIM_DT, pEnv); acc -= SIM_DT; n++; }
     if (n === 8) acc = 0;
     spotCheck(dt);
@@ -491,7 +503,9 @@ async function boot() {
     R.look = env.look;   // movers 가 룩 2 전조등 원뿔을 고른다
     if (people && castDraw) castDraw.emit(R, people, { alpha: acc / SIM_DT, view, cw: canvas.width, ch: canvas.height, season: state.season, rain: env.rain > 0.5, day: env.day });
     else movers.emitPeople(R, state.time, night);
-    movers.emitVehicles(R, traffic.vehicles, acc / SIM_DT, night);
+    const vr = [view.originX, view.originY, view.originX + canvas.width / view.scale, view.originY + canvas.height / view.scale];
+    if (parked) movers.emitVehicles(R, parked, 0, 0, vr);   // 세워 둔 차: 불 없음
+    movers.emitVehicles(R, traffic.vehicles, acc / SIM_DT, night, vr);
     movers.emitSignals(R, traffic.signals);
     if (night > 0.02) movers.emitLamps(R, traffic.signals, R.look === 2);
     birdView.day = env.day; birdView.F = R.F;
@@ -576,7 +590,12 @@ async function boot() {
     step(dt) { advance(dt); draw(); },
     startTour, stopTour, setSeason,
     tourLength: TOUR.total, map: MAP, places: PLACES,
-    people, castDraw, castReg,
+    people, castDraw, castReg, parked: () => parked,
+    // 측정: 지금 나와 있는 사람·자전거·차 수. v = [x0, y0, x1, y1] 지도 px(없으면 전체)
+    census: (v = null) => {
+      const S = [0, 0, 0], inV = (x, y, z = 0) => { if (!v) return true; proj.project(x, y, z, S); return S[0] >= v[0] && S[0] < v[2] && S[1] >= v[1] && S[1] < v[3]; };
+      return { ...(people ? people.counts(v) : {}), cars: traffic.vehicles.filter((c) => inV(c.x, c.y, c.z)).length, parked: (parked || []).filter((c) => inV(c.x, c.y)).length };
+    },
     birds, scareBirds: (x, y, r) => birds.scare(x, y, r), launchBirds: (i) => birds.launch(i),
     applyHash, hashNow,
     winEst: () => winEst, winSource: () => winSource,

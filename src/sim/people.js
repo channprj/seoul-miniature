@@ -20,6 +20,10 @@ export const CEREMONY_HOURS = [10, 14];   // 수문장 교대 의식 시작 시�
 export const PAL_OPEN = [9, 18];           // 궁궐 관람 시간(시). 이 밖에는 궁 안 방문객·안내원·궁 안 장면이 없다.
 export const CEREMONY_WINDOW = 0.5;
 export const RUN_GROUPS = 44;             // 궁 둘레 러너 무리 수(혼자 62 %, 2~5명 크루 38 %). 아침·저녁에 전부, 낮에는 45 %.
+export const RUN_GROUPS_CITY = 64;        // 여의도 강변 러너 무리 수(강변 띠 길이에 비례해 나눈다)
+export const BIKE_GROUPS = 120;           // 여의도 자전거 무리 수(자전거 띠 길이에 비례)
+// 자전거 탄 사람의 옷(팔레트 번호): 보통 옷 8 + 운동복 4. emotes.js 가 같은 목록 순서로 모형 칸을 만든다(look.pal = 이 목록의 번호).
+export const riderPals = (cast) => [...cast.normal.slice(0, 8), ...cast.runner.slice(0, 4)];
 const BIT = { PAVE: 1, GRASS: 2, DIRT: 4 };
 const fr = (v) => v - Math.floor(v);
 const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -84,9 +88,11 @@ export function createPeople(scene, grid, opts = {}) {
   const seed = opts.seed ?? 5;
   const cast = addCast(scene);
   const proj = opts.proj || makeProjection(scene.camera);
+  // profile: 'palace'(경복궁: 궁궐 의식·관람 시간·한복) | 'city'(여의도: 공원·한강·업무지구, 자전거). 장소는 둘 다 classes.png 와 시드로 고른다.
+  const city = opts.profile === 'city';
   const { ex, ey, m } = proj;
   const det = ex[0] * ey[1] - ex[1] * ey[0];
-  const S = [0, 0, 0], P3 = [0, 0, 0], Q2 = [0, 0];
+  const S = [0, 0, 0], P3 = [0, 0, 0], Q3 = [0, 0, 0], Q2 = [0, 0];
   const toWorld = (px, py, out) => {
     const a = (px - proj.W / 2) * m + proj.cx, b = (proj.H / 2 - py) * m + proj.cy;
     out[0] = (a * ey[1] - b * ex[1]) / det; out[1] = (b * ex[0] - a * ey[0]) / det;
@@ -107,30 +113,35 @@ export function createPeople(scene, grid, opts = {}) {
   // 높은 단(광화문 월대·전각 앞 월대처럼 넓고 평평한 포장면, 지면 위 0.3~2.6 m)도 걷는 곳으로 받는다. hz = 그 칸에 선 사람의 높이(m, 지면 0).
   // sim 좌표는 그대로 '화면 픽셀과 맞는 지면(z=0) 점'이고, 단 위 사람은 같은 픽셀에 그 면의 깊이로 그린다(UX·UY, emotes.js).
   // 단 가장자리(이웃 칸과 높이 차가 큰 곳)는 걷는 곳에서 빠지므로, 오르내림은 완만하게 이어진 곳(계단·경사)으로만 된다 — okLine 이 높이가 튀는 선을 막는다.
-  const mw = grid.w >> 1, mh = grid.h >> 1, walk = new Uint8Array(mw * mh), hz = new Float32Array(mw * mh), hr = new Float32Array(mw * mh);
-  const PLAT = [0.3, 2.6], SLOPE = 0.3;   // 단 높이 범위(m), 이웃 1 m 칸 사이 높이 차 한도(m)
+  // 걷는 칸 1 m = 지도 px 2×2(0.5 m/px 지도) 또는 1(1 m/px 지도). SH = 지도 px → 칸 자리 옮김 수.
+  const SH = proj.m < 0.75 ? 1 : 0;
+  const mw = grid.w >> SH, mh = grid.h >> SH, walk = new Uint8Array(mw * mh), hz = new Float32Array(mw * mh), hr = new Float32Array(mw * mh);
+  // 단 높이 범위(m), 이웃 1 m 칸 사이 높이 차 한도(m), 평지로 칠 높이(m). 여의도 깊이 맵은 1 m 칸 최솟값이고 지면을 펴지 않아 평지도 ±0.6 m 흔들린다.
+  const PLAT = [0.3, 2.6], SLOPE = city ? 0.8 : 0.3, FLAT = city ? 1.0 : 0.3;
   let platCells = 0;
   {
     const { w, cls } = grid, hAt = opts.heightAt;
     const kind = (c) => (c === 5 || c === 11 ? BIT.PAVE : c === 3 ? BIT.GRASS : c === 1 ? BIT.DIRT : 0);
     const cand = new Uint8Array(mw * mh), gh = [];
     for (let cy = 4; cy < mh - 4; cy++) for (let cx = 4; cx < mw - 4; cx++) {
-      const o = cy * 2 * w + cx * 2, i = cy * mw + cx;
+      const o = (cy << SH) * w + (cx << SH), i = cy * mw + cx;
       const k = kind(cls[o]);
-      if (!k || kind(cls[o + 1]) !== k || kind(cls[o + w]) !== k || kind(cls[o + w + 1]) !== k) continue;
+      if (!k || (SH && (kind(cls[o + 1]) !== k || kind(cls[o + w]) !== k || kind(cls[o + w + 1]) !== k))) continue;
       if (hAt) {
-        const h0 = hAt(cx * 2, cy * 2), h1 = hAt(cx * 2 + 1, cy * 2 + 1);
+        const h0 = hAt(cx << SH, cy << SH), h1 = SH ? hAt(cx * 2 + 1, cy * 2 + 1) : h0;
         hr[i] = (h0 + h1) / 2;
-        if (Math.abs(h0) > 0.3 || Math.abs(h1) > 0.3) {
-          if (k === BIT.PAVE && h0 > PLAT[0] && h0 < PLAT[1] && h1 > PLAT[0] && h1 < PLAT[1] && Math.abs(h0 - h1) < 0.15) cand[i] = 1;
+        if (Math.abs(h0) > FLAT || Math.abs(h1) > FLAT) {
+          if (!city && k === BIT.PAVE && h0 > PLAT[0] && h0 < PLAT[1] && h1 > PLAT[0] && h1 < PLAT[1] && Math.abs(h0 - h1) < 0.15) cand[i] = 1;
           continue;
         }
         if ((cx & 7) === 0 && (cy & 7) === 0) gh.push(hr[i]);
+        // 도시 지도: 굽기에서 땅(잔디·광장)이 z 0 보다 0.3~0.6 m 높다 → 선 사람을 그 면 깊이로(같은 픽셀) 그려 발이 땅에 묻히지 않게
+        if (city) hz[i] = Math.max(0, Math.min(1, hr[i]));
       }
       walk[i] = k;
     }
     // 단 칸: 둘레 8칸이 모두 걷는 곳(지면 또는 단 후보)이고 높이가 완만하게 이어져야 한다(가장자리·난간 옆은 빠진다)
-    if (hAt) {
+    if (hAt && !city) {
       gh.sort((a, b) => a - b);
       const g0 = gh.length ? gh[gh.length >> 1] : 0;   // 지면이 깊이 맵에서 보이는 높이(칸 최솟값 깊이의 치우침)
       for (let cy = 5; cy < mh - 5; cy++) for (let cx = 5; cx < mw - 5; cx++) {
@@ -143,10 +154,18 @@ export function createPeople(scene, grid, opts = {}) {
       }
     }
   }
-  const cellAt = (x, y) => { proj.project(x, y, 0, S); const cx = S[0] >> 1, cy = S[1] >> 1; return cx < 0 || cy < 0 || cx >= mw || cy >= mh ? 0 : walk[cy * mw + cx]; };
+  const cellAt = (x, y) => { proj.project(x, y, 0, S); const cx = S[0] >> SH, cy = S[1] >> SH; return cx < 0 || cy < 0 || cx >= mw || cy >= mh ? 0 : walk[cy * mw + cx]; };
   // 그 자리에 선 사람의 높이(m). 단 칸이 아니면 0. 걷는 곳 높이(hr)는 높이가 튀는지 볼 때 쓴다.
-  const zAt = (x, y) => { proj.project(x, y, 0, S); const cx = S[0] >> 1, cy = S[1] >> 1; return cx < 0 || cy < 0 || cx >= mw || cy >= mh ? 0 : hz[cy * mw + cx]; };
-  const hrAt = (x, y) => { proj.project(x, y, 0, S); const cx = S[0] >> 1, cy = S[1] >> 1; return cx < 0 || cy < 0 || cx >= mw || cy >= mh ? 0 : hr[cy * mw + cx]; };
+  //   도시 지도에서 걷는 칸이 아닌 자리(자전거·러너가 옆으로 비켜 지나가는 곳)는 둘레 ±2 칸 걷는 칸 높이 가운데 큰 값
+  const zAt = (x, y) => {
+    proj.project(x, y, 0, S); const cx = S[0] >> SH, cy = S[1] >> SH;
+    if (cx < 2 || cy < 2 || cx >= mw - 2 || cy >= mh - 2) return 0;
+    const i = cy * mw + cx;
+    if (!city || walk[i]) return hz[i];
+    let z = 0; for (let j = -2; j <= 2; j++) for (let k = -2; k <= 2; k++) { const o = i + j * mw + k; if (walk[o] && hz[o] > z) z = hz[o]; }
+    return z;
+  };
+  const hrAt = (x, y) => { proj.project(x, y, 0, S); const cx = S[0] >> SH, cy = S[1] >> SH; return cx < 0 || cy < 0 || cx >= mw || cy >= mh ? 0 : hr[cy * mw + cx]; };
   const UX = proj.vd[0] / proj.vd[2], UY = proj.vd[1] / proj.vd[2];   // (x,y,0) 과 같은 픽셀에 보이는 높이 1 m 점까지의 수평 이동
   const clsAt = (x, y) => { proj.project(x, y, 0, S); const px = Math.floor(S[0]), py = Math.floor(S[1]); return px < 0 || py < 0 || px >= grid.w || py >= grid.h ? 0 : grid.cls[py * grid.w + px]; };
   // 발 픽셀이 건물·나무에 가려진 자리(말풍선을 띄우지 않는다)
@@ -154,7 +173,7 @@ export function createPeople(scene, grid, opts = {}) {
   // 설 수 있는 자리: 주변 3×3 칸(±1 m)이 모두 허용 종류
   const okPoint = (x, y, bits = BIT.PAVE) => {
     proj.project(x, y, 0, S);
-    const cx = S[0] >> 1, cy = S[1] >> 1;
+    const cx = S[0] >> SH, cy = S[1] >> SH;
     if (cx < 1 || cy < 1 || cx >= mw - 1 || cy >= mh - 1) return false;
     for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (!(walk[(cy + j) * mw + cx + i] & bits)) return false;
     return true;
@@ -196,39 +215,218 @@ export function createPeople(scene, grid, opts = {}) {
   // 한 묶음은 같은 높이(단 위끼리, 또는 지면끼리)에 선다
   const groupOk = (pts, bits = BIT.PAVE, gap = 1.0) => { const z0 = pts.length ? zAt(pts[0][0], pts[0][1]) : 0; return pts.every((p, i) => tryPt(p[0], p[1], bits) && Math.abs(zAt(p[0], p[1]) - z0) < 0.35 && pts.every((q, j) => j <= i || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap)); };
   const anchor = (px, py) => toWorld(px, py, [0, 0]);
+  // 도시 지도: 장면 데이터의 랜드마크(지면 자리, 지도 px) → 로컬 m
+  function cityAnchors() { const o = {}; for (const [k, p] of Object.entries(scene.anchors_ground || scene.anchors || {})) o[k] = anchor(p[0], p[1]); return o; }
   // 좌표는 tour.js PLACES 의 지도 px(건물 가운데쯤). 실제 자리는 이 둘레에서 클래스 맵으로 찾는다.
-  const A = { gate: anchor(850, 1225), geun: anchor(1215, 985), gyeong: anchor(1275, 800), hyang: anchor(1830, 650), seochon: anchor(640, 520), bukchon: anchor(2250, 980), sejong: anchor(330, 1230) };
-  const PALACE = [-258.6, 12.2, 297.3, 878.1];   // 궁궐 담 안쪽을 덮는 상자(로컬 m, main.js env.palace 와 같은 값)
-  const inBox = (x, y) => x >= PALACE[0] && x <= PALACE[2] && y >= PALACE[1] && y <= PALACE[3];
-  const inPalace = (x, y) => { if (x < PALACE[0] || x > PALACE[2] || y < PALACE[1] || y > PALACE[3]) return false; const c = clsAt(x, y); return c === 5 || c === 8 || c === 9; };
+  const A = city ? cityAnchors() : { gate: anchor(850, 1225), geun: anchor(1215, 985), gyeong: anchor(1275, 800), hyang: anchor(1830, 650), seochon: anchor(640, 520), bukchon: anchor(2250, 980), sejong: anchor(330, 1230) };
+  const PALACE = city ? null : [-258.6, 12.2, 297.3, 878.1];   // 궁궐 담 안쪽을 덮는 상자(로컬 m, main.js env.palace 와 같은 값). 도시 지도는 없음.
+  const inBox = (x, y) => !!PALACE && x >= PALACE[0] && x <= PALACE[2] && y >= PALACE[1] && y <= PALACE[3];
+  const inPalace = (x, y) => { if (!PALACE || x < PALACE[0] || x > PALACE[2] || y < PALACE[1] || y > PALACE[3]) return false; const c = clsAt(x, y); return c === 5 || c === 8 || c === 9; };
+
+  // ── 도시 지도(여의도) 지형: 큰 물(한강·샛강)까지 거리, 강변 띠(달리기·자전거 길), 차로 옆 보도. classes.png·깊이·차로에서 고른다(좌표를 손으로 찍지 않는다).
+  let dW = null, DG = 2, dgw = 0, dgh = 0;   // 거리 격자: 걷는 칸 DG×DG 하나에 한 값(m, 400 에서 자름)
+  const dWater = (x, y) => { if (!dW) return 1e9; proj.project(x, y, 0, S); const gx = (S[0] >> SH) >> 1, gy = (S[1] >> SH) >> 1; return gx < 0 || gy < 0 || gx >= dgw || gy >= dgh ? 1e9 : dW[gy * dgw + gx]; };
+  const AW = [];   // 사람을 두지 않는 곳(밤섬): [x, y, r]
+  let isleN = 0, isle = null;   // 밤섬(물로 둘러싸인 땅): 거리 격자 칸마다 1
+  const banned = (x, y) => {
+    if (isle) { proj.project(x, y, 0, S); const gx = (S[0] >> SH) >> 1, gy = (S[1] >> SH) >> 1; if (gx >= 0 && gy >= 0 && gx < dgw && gy < dgh && isle[gy * dgw + gx]) return true; }
+    return AW.some((b) => Math.hypot(x - b[0], y - b[1]) < b[2]);
+  };
+  const ANY = BIT.PAVE | BIT.GRASS | BIT.DIRT;
+  // 강변 달리기 띠(물에서 6~11 m), 자전거 띠(13~19 m), 산책 띠(21~32 m, 걷는 사람만), 차로 옆 보도: [{ pts, cum, L }]
+  const cityRun = [], cityBike = [], citySide = [], cityProm = [];
+  if (city) {
+    // 1) 큰 물: 물 칸(4) 덩어리 가운데 2만 칸(약 7 ha)이 넘는 것. 연못·분수·수영장은 빠진다.
+    const { w, cls } = grid;
+    dgw = mw >> 1; dgh = mh >> 1;
+    const N = dgw * dgh, wet = new Uint8Array(N), comp = new Int32Array(N).fill(-1), st = new Int32Array(N), sizes = [];
+    for (let gy = 0; gy < dgh; gy++) for (let gx = 0; gx < dgw; gx++) if (cls[((gy * DG) << SH) * w + ((gx * DG) << SH)] === 4) wet[gy * dgw + gx] = 1;
+    for (let i = 0; i < N; i++) {
+      if (!wet[i] || comp[i] >= 0) continue;
+      let sp = 0, cnt = 0; st[sp++] = i; comp[i] = sizes.length;
+      while (sp) {
+        const j = st[--sp], x = j % dgw; cnt++;
+        for (const n of [x > 0 ? j - 1 : -1, x < dgw - 1 ? j + 1 : -1, j - dgw, j + dgw]) if (n >= 0 && n < N && wet[n] && comp[n] < 0) { comp[n] = sizes.length; st[sp++] = n; }
+      }
+      sizes.push(cnt);
+    }
+    // 2) 거리 변환(체임퍼, 지면 m): 가로 한 칸 = DG·m, 세로 한 칸 = DG·m / |ey 지면 성분|
+    const a = DG * (1 << SH) * proj.m, b = a / Math.hypot(ey[0], ey[1]), c = Math.hypot(a, b);
+    dW = new Float32Array(N);
+    for (let i = 0; i < N; i++) dW[i] = wet[i] && sizes[comp[i]] * DG * DG > 20000 ? 0 : 1e9;
+    for (let y = 0; y < dgh; y++) for (let x = 0; x < dgw; x++) {
+      const i = y * dgw + x; let v = dW[i];
+      if (x > 0) v = Math.min(v, dW[i - 1] + a);
+      if (y > 0) { v = Math.min(v, dW[i - dgw] + b); if (x > 0) v = Math.min(v, dW[i - dgw - 1] + c); if (x < dgw - 1) v = Math.min(v, dW[i - dgw + 1] + c); }
+      dW[i] = v;
+    }
+    for (let y = dgh - 1; y >= 0; y--) for (let x = dgw - 1; x >= 0; x--) {
+      const i = y * dgw + x; let v = dW[i];
+      if (x < dgw - 1) v = Math.min(v, dW[i + 1] + a);
+      if (y < dgh - 1) { v = Math.min(v, dW[i + dgw] + b); if (x < dgw - 1) v = Math.min(v, dW[i + dgw + 1] + c); if (x > 0) v = Math.min(v, dW[i + dgw - 1] + c); }
+      dW[i] = Math.min(400, v);
+    }
+    // 밤섬: 땅(물 4 도, 높은 다리 상판 — 높이 3 m 넘는 차도 2 — 도 아닌 칸)의 덩어리 가운데 격자의 1/10 보다 작고 앵커에서 900 m 안에 닿는 것 모두(두 섬).
+    if (A.bamseom) {
+      const hA = opts.heightAt || (() => 0);
+      const land = new Uint8Array(N);
+      for (let j = 0; j < N; j++) { const x = (j % dgw) * DG << SH, y = Math.floor(j / dgw) * DG << SH, c2 = cls[y * w + x]; land[j] = c2 !== 4 && !(c2 === 2 && hA(x, y) > 3) ? 1 : 0; }
+      proj.project(A.bamseom[0], A.bamseom[1], 0, S);
+      const ax = (S[0] >> SH) >> 1, ay = (S[1] >> SH) >> 1, seen = new Uint8Array(N), mark = new Uint8Array(N);
+      for (let i = 0; i < N; i++) {
+        if (!land[i] || seen[i]) continue;
+        let sp = 0, cnt = 0, near = false; const mem = [];
+        st[sp++] = i; seen[i] = 1;
+        while (sp) {
+          const j = st[--sp], x = j % dgw, y = (j - x) / dgw; cnt++; if (cnt <= N / 10) mem.push(j);
+          if (!near && Math.hypot((x - ax) * a, (y - ay) * b) < 900) near = true;
+          for (const n of [x > 0 ? j - 1 : -1, x < dgw - 1 ? j + 1 : -1, j - dgw, j + dgw]) if (n >= 0 && n < N && land[n] && !seen[n]) { seen[n] = 1; st[sp++] = n; }
+        }
+        if (near && cnt <= N / 10) { for (const j of mem) mark[j] = 1; isleN += cnt; }
+      }
+      if (isleN) isle = mark; else AW.push([A.bamseom[0], A.bamseom[1], 430]);
+    }
+    // 3) 강변 띠: 물에서 d0~d1 m 떨어진 걷는 칸을 점으로 모아, 앞으로 이어지는 가까운 점을 차례로 잇는다(욕심쟁이).
+    //    다리 밑(높은 상판에 가린 곳)·가로수 수관(10)은 지나가도 된다(그려질 때 깊이로 가려진다). 지면 차도(2)는 12 m 까지만 건넌다.
+    const hAt = opts.heightAt || (() => 0);
+    const passLine = (p, q) => {
+      const n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 0.5)), st2 = Math.hypot(q[0] - p[0], q[1] - p[1]) / n;
+      let off = 0, road = 0;
+      for (let k = 0; k <= n; k++) {
+        const x = p[0] + (q[0] - p[0]) * k / n, y = p[1] + (q[1] - p[1]) * k / n;
+        if (banned(x, y)) return false;
+        if (cellAt(x, y) & ANY) continue;
+        const cc = clsAt(x, y);
+        if (cc === 4) return false;
+        proj.project(x, y, 0, S);
+        const hh = hAt(Math.min(grid.w - 1, Math.max(0, Math.floor(S[0]))), Math.min(grid.h - 1, Math.max(0, Math.floor(S[1]))));
+        if (cc === 10 || hh > 3) off += st2;
+        else if (cc === 2) { road += st2; off += st2; }
+        else return false;
+        if (off > 40 || road > 12) return false;
+      }
+      return true;
+    };
+    const chains = (d0, d1, minL, out) => {
+      const pts = [];
+      for (let gy = 2; gy < dgh - 2; gy++) for (let gx = 2; gx < dgw - 2; gx++) {
+        const d = dW[gy * dgw + gx];
+        if (d < d0 || d > d1) continue;
+        const cx = gx * DG + 1, cy = gy * DG + 1;
+        if (!(walk[cy * mw + cx] & ANY)) continue;
+        const p = toWorld((cx << SH) + 0.5 * (1 << SH), (cy << SH) + 0.5 * (1 << SH), [0, 0]);
+        if (!banned(p[0], p[1])) pts.push(p);
+      }
+      const used = new Uint8Array(pts.length), hsh = new Map(), HK = (x, y) => (Math.floor(x / 8) + 8192) * 16384 + Math.floor(y / 8) + 8192;
+      pts.forEach((p, i) => { const k = HK(p[0], p[1]); let l = hsh.get(k); if (!l) hsh.set(k, l = []); l.push(i); });
+      const around = (p, r, fn) => { const k0 = Math.floor(p[0] / 8), k1 = Math.floor(p[1] / 8), R = Math.ceil(r / 8); for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) { const l = hsh.get((k0 + i + 8192) * 16384 + k1 + j + 8192); if (l) for (const q of l) fn(q); } };
+      const thin = (p) => around(p, 4, (q) => { if (!used[q] && Math.hypot(pts[q][0] - p[0], pts[q][1] - p[1]) < 4.2) used[q] = 1; });
+      const extend = (i0, hx, hy) => {
+        const line = []; let cur = pts[i0];
+        for (let guard = 0; guard < 5000; guard++) {
+          let best = -1, bs = 1e9;
+          for (const [r, far] of [[11, false], [46, true]]) {
+            around(cur, r, (q) => {
+              if (used[q]) return;
+              const dx = pts[q][0] - cur[0], dy = pts[q][1] - cur[1], d = Math.hypot(dx, dy);
+              if (d < 1 || d > r) return;
+              const dot = hx || hy ? (dx * hx + dy * hy) / d : 1;
+              if (dot < (far ? 0.6 : -0.1)) return;
+              const sc = d - 3 * dot;
+              if (sc < bs && (far ? passLine(cur, pts[q]) : okLine(cur[0], cur[1], pts[q][0], pts[q][1], ANY))) { bs = sc; best = q; }
+            });
+            if (best >= 0) break;
+          }
+          if (best < 0) break;
+          const q = pts[best], d = Math.hypot(q[0] - cur[0], q[1] - cur[1]);
+          const nx = (q[0] - cur[0]) / d, ny = (q[1] - cur[1]) / d;
+          hx = hx || hy ? hx * 0.5 + nx * 0.5 : nx; hy = hx || hy ? hy * 0.5 + ny * 0.5 : ny;
+          const hl = Math.hypot(hx, hy) || 1; hx /= hl; hy /= hl;
+          used[best] = 1; thin(q); line.push(q); cur = q;
+        }
+        return line;
+      };
+      for (let i = 0; i < pts.length; i++) {
+        if (used[i]) continue;
+        used[i] = 1; thin(pts[i]);
+        const fw = extend(i, 0, 0);
+        let hx = 0, hy = 0;
+        if (fw.length) { hx = pts[i][0] - fw[0][0]; hy = pts[i][1] - fw[0][1]; const l = Math.hypot(hx, hy) || 1; hx /= l; hy /= l; }
+        const bw = fw.length ? extend(i, hx, hy) : [];
+        const line = [...bw.reverse(), pts[i], ...fw].map((p) => [p[0], p[1], 0]);
+        // 펴기: 이웃과 평균 낸 자리가 걷는 칸이고 양옆이 이어질 때만
+        for (let pass = 0; pass < 3; pass++) for (let k = 1; k < line.length - 1; k++) {
+          const p0 = line[k - 1], p1 = line[k], p2 = line[k + 1], m2 = [(p0[0] + 2 * p1[0] + p2[0]) / 4, (p0[1] + 2 * p1[1] + p2[1]) / 4, 0];
+          if (cellAt(m2[0], m2[1]) & ANY && passLine(p0, m2) && passLine(m2, p2)) line[k] = m2;
+        }
+        const cum = cumLengths(line), L = cum[cum.length - 1];
+        if (L >= minL) out.push({ pts: line, cum, L });
+      }
+    };
+    chains(6, 11, 150, cityRun);
+    chains(13, 19, 250, cityBike);
+    chains(21, 32, 150, cityProm);
+    // 4) 차로 옆 보도: 일반 도로(간선·보조·국지, 지면) 차로의 오른쪽으로 차도가 끝나는 곳을 찾아 1.5 m 안쪽(보도·광장 11, 맨땅 1)
+    for (const ln of scene.lanes) {
+      const hw = String(ln.highway || '');
+      if (!/^(primary|secondary|tertiary)$/.test(hw) || ln.pts.some((p) => (p[2] || 0) > 1)) continue;
+      const cum = cumLengths(ln.pts), L = cum[cum.length - 1];
+      let cur = [];
+      const flush = () => { if (cur.length >= 2) { const c2 = cumLengths(cur); if (c2[c2.length - 1] >= 40) citySide.push({ pts: cur, cum: c2, L: c2[c2.length - 1] }); } cur = []; };
+      for (let d = 2; d <= L - 2; d += 5) {
+        pointAt(ln.pts, cum, d, P3); const px = P3[0], py = P3[1];
+        pointAt(ln.pts, cum, Math.min(L, d + 2), Q3);
+        let tx = Q3[0] - px, ty = Q3[1] - py; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+        const nx = ty, ny = -tx;   // 진행 방향의 오른쪽(x 동, y 북)
+        let hit = null, q = 1.5, past = 0;
+        for (; q < 34; q += 0.5) {
+          const c2 = clsAt(px + nx * q, py + ny * q);
+          if (c2 === 2 && !past) continue;
+          if (c2 === 10 || c2 === 2) { past += 0.5; if (past > 6) break; continue; }
+          if ((c2 === 11 || c2 === 1) && (cellAt(px + nx * (q + 1.5), py + ny * (q + 1.5)) & (BIT.PAVE | BIT.DIRT))) hit = [px + nx * (q + 1.5), py + ny * (q + 1.5), 0];
+          break;
+        }
+        if (hit && cur.length && !okLine(cur[cur.length - 1][0], cur[cur.length - 1][1], hit[0], hit[1], BIT.PAVE | BIT.DIRT | BIT.GRASS)) flush();
+        if (hit) cur.push(hit); else flush();
+      }
+      flush();
+    }
+  }
+  // 도시 지도의 동네: k 공원(잔디·숲), r 강변, b 업무지구 보도, a 국회 앞, s 그 밖의 거리
+  const BIZ = ['parc1', 'parc2', 'ifc', 'conrad', 'hyundai', 'lg', 'fki', 'krx'].filter((k) => A[k]).map((k) => A[k]);
+  const PARKS = [['park', 360], ['park_plaza', 160], ['saetgang_park', 420]].filter(([k]) => A[k]).map(([k, r]) => [A[k][0], A[k][1], r]);
+  const zoneOf = (pts, cum, L, side) => {
+    let g = 0, n = 0, dw = 0, bz = 1e9, as = 1e9, pk = 0;
+    for (let k = 0; k <= 8; k++) {
+      pointAt(pts, cum, L * k / 8, P3); n++;
+      const c2 = clsAt(P3[0], P3[1]); if (c2 === 3 || c2 === 10) g++;
+      dw += Math.min(400, dWater(P3[0], P3[1]));
+      for (const q of BIZ) bz = Math.min(bz, Math.hypot(P3[0] - q[0], P3[1] - q[1]));
+      if (A.assembly) as = Math.min(as, Math.hypot(P3[0] - A.assembly[0], P3[1] - A.assembly[1]));
+      if (PARKS.some((q) => Math.hypot(P3[0] - q[0], P3[1] - q[1]) < q[2])) pk++;
+    }
+    if (as < 260) return 'a';
+    if (dw / n < 130) return 'r';
+    if (pk >= 5 || (!side && g >= 5)) return 'k';
+    if (bz < 480) return 'b';
+    return 's';
+  };
 
   // ── 걷는 사람: 경로를 왕복(닫힌 식: 위상 + 시간 × 속도 − 누적 정지 시간). 유형·동행은 번호 해시와 경로 위치로 정한다(고정).
   const walkers = [];
-  scene.walkers.forEach((w0, i) => {
-    const w = SCENE_FIX.cut[i] ? { ...w0, pts: cutPath(w0.pts, SCENE_FIX.cut[i]) } : w0;
-    const cum = cumLengths(w.pts), L = cum[cum.length - 1];
-    if (!(L > 1)) return;
-    const h1 = hash01(i * 19 + 2), h2 = hash01(i * 23 + 7), h3 = hash01(i * 29 + 13), h4 = hash01(i * 31 + 3);
-    let nPal = 0;
-    for (let k = 0; k <= 4; k++) { pointAt(w.pts, cum, L * k / 4, P3); if (inPalace(P3[0], P3[1])) nPal++; }
-    pointAt(w.pts, cum, L / 2, P3);
-    const mx = P3[0], my = P3[1], zone = nPal >= 3 ? 'p' : 's';
-    const dTo = (a) => Math.hypot(mx - a[0], my - a[1]);
-    const near = Math.min(dTo(A.gate), dTo(A.seochon), dTo(A.bukchon)) < 230, biz = dTo(A.sejong) < 320;
-    const pal0 = scene.walker_pal_idx[i], pk = (arr, h) => arr[Math.floor(h * arr.length)];
+  const mkWalker = (i, w, cum, L, zone, type, pal0, speed) => {
+    const h2 = hash01(i * 23 + 7), h3 = hash01(i * 29 + 13), h4 = hash01(i * 31 + 3);
+    const pk = (arr, h) => arr[Math.floor(h * arr.length)];
     const hat = (p) => (h3 < p ? 1 + Math.floor(h4 * 8) : 0), bag = (p) => (fr(h3 * 7) < p ? 1 + Math.floor(h4 * 4) : 0);
     const hb = () => (h2 < 0.72 ? LK('hf', Math.floor(h3 * 14), h4) : LK('hm', Math.floor(h3 * 6), h4));
-    let type = T.NORMAL, look = LK('a', pal0, h4), fol = [];
+    let look = LK('a', pal0, h4);
+    const fol = [];
     const F = (dd, lk) => fol.push({ dd, ox: 0, oy: 0, look: lk, hop: 0, bub: 0 });
-    const cum2 = (list) => { let a = 0; for (const [p, t] of list) { a += p; if (h1 < a) return t; } return T.NORMAL; };
-    type = zone === 'p'
-      ? cum2([[HANBOK.palace, T.HANBOK], [0.30, T.TOURIST], [0.09, T.PARENT], [0.05, T.ELDER], [0.03, T.STUDENT], [0.02, T.STROLLER], [0.02, T.WHEEL], [0.02, T.STAFF]])
-      : cum2([[near ? HANBOK.near : HANBOK.city, T.HANBOK], [biz ? 0.3 : 0.15, T.OFFICE], [0.07, T.STUDENT], [0.08, T.ELDER], [near ? 0.14 : 0.06, T.TOURIST], [0.04, T.HIKER], [0.06, T.DOG], [0.05, T.PARENT], [0.02, T.STROLLER], [0.012, T.WHEEL], [0.015, T.CLEANER], [0.025, T.JOGGER]]);
     if (type === T.HANBOK) { look = hb(); if (fr(h2 * 9) < 0.4) F(-1.0, fr(h2 * 31) < 0.7 ? LK('hf', Math.floor(fr(h3 * 17) * 14), fr(h4 * 3)) : LK('hm', Math.floor(fr(h3 * 17) * 6), fr(h4 * 3))); }
-    else if (type === T.OFFICE) look = LK('a', pk(cast.office, h2), h4);
+    else if (type === T.OFFICE) look = city ? LK('a', pk(cast.office, h2), h4, { cup: fr(h3 * 5) < 0.4 ? 1 : 0, bag: fr(h3 * 11) < 0.15 ? 4 : 0 }) : LK('a', pk(cast.office, h2), h4);
     else if (type === T.STUDENT) { look = LK('a', pk(cast.student, h2), h4, { bag: bag(0.6) }); if (h3 < 0.5) for (let k = 1; k <= 1 + Math.floor(h4 * 3); k++) F(-0.95 * k, LK('a', pk(cast.student, fr(h2 * (k + 3))), fr(h4 * (k + 2)), { bag: k & 1 ? 1 + (k % 4) : 0 })); }
     else if (type === T.ELDER) look = LK('a', pk(cast.elder, h2), h4, { cane: h3 < 0.6 ? 1 : 0, hat: h3 > 0.8 ? 6 : 0 });
-    else if (type === T.TOURIST) { look = LK('a', pal0, h4, { hat: hat(0.6), bag: bag(0.45) }); if (fr(h2 * 9) < 0.25) F(-1.0, LK('a', pk(cast.normal, fr(h2 * 5)), fr(h4 * 5), { hat: fr(h3 * 3) < 0.5 ? 1 + Math.floor(fr(h4 * 9) * 8) : 0 })); }
+    else if (type === T.TOURIST) { look = LK('a', pal0, h4, { hat: hat(0.6), bag: bag(0.45) }); if (fr(h2 * 9) < (city ? 0.45 : 0.25)) F(-1.0, LK('a', pk(cast.normal, fr(h2 * 5)), fr(h4 * 5), { hat: fr(h3 * 3) < 0.5 ? 1 + Math.floor(fr(h4 * 9) * 8) : 0 })); }
     else if (type === T.HIKER) look = LK('a', pk(cast.hiker, h2), h4, { hat: 1 + Math.floor(h3 * 8), bag: 1 + Math.floor(h4 * 4), cane: h3 < 0.35 ? 1 : 0 });
     else if (type === T.CLEANER) look = LK('a', pk(cast.cleaner, h2), h4, { hat: 1 + Math.floor(h3 * 5), cane: 2, uniform: true, noUmb: true });
     else if (type === T.STAFF) look = LK('a', pk(cast.staff, h2), h4, { hat: 4, uniform: true });
@@ -240,9 +438,66 @@ export function createPeople(scene, grid, opts = {}) {
     else if (type === T.DOG) F(h2 < 0.6 ? 1.15 : -1.1, LK('dog', Math.floor(h3 * 4), h4));
     else if (type === T.JOGGER) look = LK('a', pk(cast.hiker, h2), h4, { noUmb: true });
     const a = w.pts[0], b = w.pts[w.pts.length - 1];
-    walkers.push({ pts: w.pts, cum, L, speed: w.speed_mps * (0.85 + 0.3 * hash01(i * 7 + 1)) * SPEED[type], phase: hash01(i * 13 + 5) * 2 * L, pal: look.pal, night: hash01(i * 3 + 11),
+    walkers.push({ pts: w.pts, cum, L, speed: speed * (0.85 + 0.3 * hash01(i * 7 + 1)) * SPEED[type], phase: hash01(i * 13 + 5) * 2 * L, pal: look.pal, night: hash01(i * 3 + 11),
       type, zone, look, fol, vis: true, key: hash01(i * 37 + 9), run: type === T.JOGGER, bub: 0, sx: (b[0] - a[0]) * ex[0] + (b[1] - a[1]) * ex[1] >= 0 ? 1 : -1, dir: 1 });
+  };
+  const cum2 = (h1, list) => { let a = 0; for (const [p, t] of list) { a += p; if (h1 < a) return t; } return T.NORMAL; };
+  if (!city) scene.walkers.forEach((w0, i) => {
+    const w = SCENE_FIX.cut[i] ? { ...w0, pts: cutPath(w0.pts, SCENE_FIX.cut[i]) } : w0;
+    const cum = cumLengths(w.pts), L = cum[cum.length - 1];
+    if (!(L > 1)) return;
+    const h1 = hash01(i * 19 + 2);
+    let nPal = 0;
+    for (let k = 0; k <= 4; k++) { pointAt(w.pts, cum, L * k / 4, P3); if (inPalace(P3[0], P3[1])) nPal++; }
+    pointAt(w.pts, cum, L / 2, P3);
+    const mx = P3[0], my = P3[1], zone = nPal >= 3 ? 'p' : 's';
+    const dTo = (a) => Math.hypot(mx - a[0], my - a[1]);
+    const near = Math.min(dTo(A.gate), dTo(A.seochon), dTo(A.bukchon)) < 230, biz = dTo(A.sejong) < 320;
+    const type = zone === 'p'
+      ? cum2(h1, [[HANBOK.palace, T.HANBOK], [0.30, T.TOURIST], [0.09, T.PARENT], [0.05, T.ELDER], [0.03, T.STUDENT], [0.02, T.STROLLER], [0.02, T.WHEEL], [0.02, T.STAFF]])
+      : cum2(h1, [[near ? HANBOK.near : HANBOK.city, T.HANBOK], [biz ? 0.3 : 0.15, T.OFFICE], [0.07, T.STUDENT], [0.08, T.ELDER], [near ? 0.14 : 0.06, T.TOURIST], [0.04, T.HIKER], [0.06, T.DOG], [0.05, T.PARENT], [0.02, T.STROLLER], [0.012, T.WHEEL], [0.015, T.CLEANER], [0.025, T.JOGGER]]);
+    mkWalker(i, w, cum, L, zone, type, scene.walker_pal_idx[i], w.speed_mps);
   });
+  else {
+    // 도시: 보행로(map.json walk_paths, 걷는 사람끼리 같은 경로를 나눠 쓴다) + 차로 옆 보도 + 강변 띠. 동네마다 100 m 당 사람 수를 정한다.
+    const paths = [], seen = new Set();
+    for (const w of scene.walkers) if (!seen.has(w.pts)) { seen.add(w.pts); paths.push({ pts: w.pts, side: false }); }
+    for (const c of citySide) paths.push({ pts: c.pts, side: true });
+    for (const c of cityRun) paths.push({ pts: c.pts, side: false, river: true });
+    for (const c of cityProm) paths.push({ pts: c.pts, side: false, river: true });
+    const DENS = { k: 9, r: 8, b: 7, a: 3, s: 2.4 };
+    const MIX = {
+      k: [[0.30, T.NORMAL], [0.12, T.ELDER], [0.12, T.PARENT], [0.05, T.STROLLER], [0.13, T.DOG], [0.07, T.JOGGER], [0.01, T.WHEEL], [0.06, T.OFFICE], [0.05, T.STUDENT], [0.08, T.TOURIST]],
+      r: [[0.28, T.NORMAL], [0.08, T.ELDER], [0.09, T.PARENT], [0.04, T.STROLLER], [0.15, T.DOG], [0.14, T.JOGGER], [0.01, T.WHEEL], [0.04, T.STUDENT], [0.15, T.TOURIST]],
+      b: [[0.24, T.NORMAL], [0.56, T.OFFICE], [0.03, T.STUDENT], [0.04, T.ELDER], [0.04, T.TOURIST], [0.03, T.DOG], [0.02, T.PARENT], [0.01, T.STROLLER], [0.015, T.CLEANER], [0.015, T.JOGGER]],
+      a: [[0.25, T.NORMAL], [0.4, T.TOURIST], [0.25, T.OFFICE], [0.05, T.ELDER], [0.05, T.STUDENT]],
+      s: [[0.45, T.NORMAL], [0.16, T.OFFICE], [0.1, T.ELDER], [0.08, T.STUDENT], [0.06, T.DOG], [0.06, T.PARENT], [0.02, T.STROLLER], [0.02, T.CLEANER], [0.03, T.JOGGER], [0.02, T.TOURIST]],
+    };
+    // 같은 경로를 여럿이 한 줄로 걷지 않게: 경로를 옆으로 비낀 평행 경로(차로 옆 보도 ±0.7 m, 그 밖 ±1.6 m, 5 줄)를 만들어 나눠 준다.
+    //   비낀 점이 걷는 칸이 아니면 원래 점을 쓴다.
+    const offset = (pts, o) => pts.map((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      let tx = b[0] - a[0], ty = b[1] - a[1]; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      const x = p[0] + ty * o, y = p[1] - tx * o;
+      return cellAt(x, y) & ANY && !banned(x, y) ? [x, y, p[2] || 0] : p;
+    });
+    let id = 0;
+    for (const p of paths) {
+      const cum = cumLengths(p.pts), L = cum[cum.length - 1];
+      if (!(L > 1)) continue;
+      pointAt(p.pts, cum, L / 2, P3);
+      if (banned(P3[0], P3[1])) continue;
+      const zone = p.river ? 'r' : zoneOf(p.pts, cum, L, p.side);
+      const n = Math.min(80, Math.max(1, Math.round(L / 100 * DENS[zone])));
+      const lanes = [], wid = p.side ? 0.7 : 1.6;
+      for (let k = 0; k < n; k++, id++) {
+        const li = Math.floor(hash01(id * 89 + 7) * 5);
+        if (!lanes[li]) { const pts = li === 2 ? p.pts : offset(p.pts, (li - 2) / 2 * wid), c2 = cumLengths(pts); lanes[li] = { pts, cum: c2, L: c2[c2.length - 1] }; }
+        const ln = lanes[li];
+        mkWalker(id, ln, ln.cum, ln.L, zone, cum2(hash01(id * 19 + 2), MIX[zone]), cast.normal[Math.floor(hash01(id * 97 + 13) * cast.normal.length)], 1.15 + 0.3 * hash01(id * 31 + 5));
+      }
+    }
+  }
   const nW = walkers.length;
   const ov = { skip: new Uint8Array(nW), off: new Float64Array(nW), skipS: new Uint8Array(scene.standing.length) };
   const cool = new Float32Array(nW);
@@ -273,26 +528,45 @@ export function createPeople(scene, grid, opts = {}) {
     const bb = walkers.map((w) => { let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const p of w.pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); } return [x0, x1, y0, y1]; });
     const segD = (px, py, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(px - a[0] - dx * t, py - a[1] - dy * t); };
     const order = walkers.map((_, i) => i).sort((a, b) => bb[a][0] - bb[b][0]);
+    // 판정(경로 i 의 0.6 m 간격 점 가운데 하나가 경로 j 의 선분에서 1.3 m 안)은 경로 쌍마다 한 번만 한다: 같은 경로를 여럿이 나눠 걷는 도시 지도에서 빠르게.
+    // 선분은 1.3 m 부풀린 상자가 걸치는 4 m 칸마다 적어 두고, 점은 제 칸의 선분만 본다(결과는 모든 선분을 보는 것과 같다).
+    const pathId = new Map(), pathOf = walkers.map((w) => { let id = pathId.get(w.pts); if (id === undefined) pathId.set(w.pts, id = pathId.size); return id; });
+    const byPath = []; walkers.forEach((w, i) => { byPath[pathOf[i]] ??= w; });
+    const GS = 4, gk = (cx, cy) => (cx + 32768) * 65536 + cy + 32768, segGrid = new Map();
+    byPath.forEach((w, p) => {
+      for (let k = 1; k < w.pts.length; k++) {
+        const a = w.pts[k - 1], b = w.pts[k];
+        for (let cy = Math.floor((Math.min(a[1], b[1]) - 1.3) / GS); cy <= Math.floor((Math.max(a[1], b[1]) + 1.3) / GS); cy++)
+          for (let cx = Math.floor((Math.min(a[0], b[0]) - 1.3) / GS); cx <= Math.floor((Math.max(a[0], b[0]) + 1.3) / GS); cx++) { const key = gk(cx, cy); let l = segGrid.get(key); if (!l) segGrid.set(key, l = []); l.push(p, k); }
+      }
+    });
+    const nearCache = new Map();
+    const nearOf = (p) => {
+      let set = nearCache.get(p);
+      if (set) return set;
+      set = new Set(); nearCache.set(p, set);
+      const w = byPath[p];
+      for (let d = 0; d <= w.L; d += 0.6) {
+        pointAt(w.pts, w.cum, d, P3);
+        const l = segGrid.get(gk(Math.floor(P3[0] / GS), Math.floor(P3[1] / GS)));
+        if (l) for (let k = 0; k < l.length; k += 2) { const q = l[k]; if (set.has(q)) continue; const pts = byPath[q].pts; if (segD(P3[0], P3[1], pts[l[k + 1] - 1], pts[l[k + 1]]) < 1.3) set.add(q); }
+      }
+      return set;
+    };
     for (let oi = 0; oi < nW; oi++) {
-      const i = order[oi], A2 = bb[i], wi = walkers[i];
+      const i = order[oi], A2 = bb[i];
       for (let oj = oi + 1; oj < nW; oj++) {
         const j = order[oj], B = bb[j];
         if (B[0] > A2[1] + 1.3) break;
         if (B[2] > A2[3] + 1.3 || B[3] < A2[2] - 1.3) continue;
-        const wj = walkers[j];
-        let nearP = false;
-        for (let d = 0; d <= wi.L && !nearP; d += 0.6) {
-          pointAt(wi.pts, wi.cum, d, P3);
-          for (let k = 1; k < wj.pts.length; k++) if (segD(P3[0], P3[1], wj.pts[k - 1], wj.pts[k]) < 1.3) { nearP = true; break; }
-        }
-        if (nearP) pairs.push(Math.min(i, j), Math.max(i, j));
+        if (nearOf(pathOf[i]).has(pathOf[j])) pairs.push(Math.min(i, j), Math.max(i, j));
       }
     }
   }
 
   // ── 출연진
   const actors = [], guests = [], scenes = [], props = [], fx = [], floaters = [];
-  const stats = { chat: 0, ask: 0, askphoto: 0, dogmeet: 0, kiddog: 0, tap: 0, photo: 0, nightphoto: 0, classphoto: 0, guide: 0, hanbok: 0, couple: 0, share: 0, pigeon: 0, picnic: 0, bench: 0, jog: 0, ceremony: 0, snow: 0, cat: 0, busk: 0, proposal: 0, kite: 0, soap: 0 };
+  const stats = { chat: 0, ask: 0, askphoto: 0, dogmeet: 0, kiddog: 0, tap: 0, photo: 0, nightphoto: 0, classphoto: 0, guide: 0, hanbok: 0, couple: 0, share: 0, pigeon: 0, picnic: 0, bench: 0, jog: 0, ceremony: 0, snow: 0, cat: 0, busk: 0, proposal: 0, kite: 0, soap: 0, lawn: 0, ball: 0, fish: 0, splash: 0, lunch: 0, friends: 0 };
   // look = 겉모습(LK). pose: stand·wave·cam·cheer·point·sit·kneel·run. prop: flag·banner·spear·guitar.
   const mk = (x, y, look, o = {}) => {
     const a = { id: actors.length, x, y, z: 0, ox: x, oy: y, hx: x, hy: y, look, pose: 'stand', prop: null, bubble: 0, bT: 0, hopT: 0, waveT: 0, on: true,
@@ -340,7 +614,7 @@ export function createPeople(scene, grid, opts = {}) {
   const addScene = (kind, c, sc) => {
     proj.project(c[0], c[1], 0, S);
     Object.assign(sc, { kind, x: c[0], y: c[1], px: S[0], py: S[1], on: true, t: 0, st: 'idle', nightKey: sc.pin ? 0 : rnd(),
-      inPal: kind !== 'ceremony' && c[0] >= PALACE[0] && c[0] <= PALACE[2] && c[1] >= PALACE[1] && c[1] <= PALACE[3] });
+      inPal: kind !== 'ceremony' && inBox(c[0], c[1]) });
     scenes.push(sc);
     return sc;
   };
@@ -531,18 +805,18 @@ export function createPeople(scene, grid, opts = {}) {
 
   // ── 무리(가이드와 관광객, 한복 일행): 미리 검사한 직선 구간을 왕복한다. offs = 무리 안에서의 고정 자리(회전하지 않는 묶음).
   const mkTroupe = (kind, c, r0, r1, members, o) => {
-    const offs = members.map((mb) => mb.off), gap = o.gap || 1.0;
+    const offs = members.map((mb) => mb.off), gap = o.gap || 1.0, TB = o.bits || BIT.PAVE;
     const shifted = (p) => offs.map((f) => [p[0] + f[0], p[1] + f[1]]);
     for (let tries = 0; tries < 60; tries++) {
       const p0 = polar(c, r0, r1);
-      if (!groupOk(shifted(p0), BIT.PAVE, gap)) continue;
+      if (!groupOk(shifted(p0), TB, gap)) continue;
       const route = [p0];
       for (let leg = 0; leg < o.legs; leg++) {
         const p = route[route.length - 1];
         for (let t = 0; t < 50; t++) {
           const q = polar(p, o.minLeg, o.maxLeg);
           if (route.some((w, wi) => wi < route.length - 1 && Math.hypot(w[0] - q[0], w[1] - q[1]) < o.minLeg * 0.8)) continue;
-          if (!groupOk(shifted(q), BIT.PAVE, gap) || !offs.every((f) => okLine(p[0] + f[0], p[1] + f[1], q[0] + f[0], q[1] + f[1]) && freeLine(p[0] + f[0], p[1] + f[1], q[0] + f[0], q[1] + f[1]))) continue;
+          if (!groupOk(shifted(q), TB, gap) || !offs.every((f) => okLine(p[0] + f[0], p[1] + f[1], q[0] + f[0], q[1] + f[1], TB) && freeLine(p[0] + f[0], p[1] + f[1], q[0] + f[0], q[1] + f[1]))) continue;
           route.push(q); break;
         }
       }
@@ -564,7 +838,7 @@ export function createPeople(scene, grid, opts = {}) {
       const as = members.map((mb, k) => mk(stand[0][k][0], stand[0][k][1], mb.pal, { prop: mb.prop || null, pose0: mb.pose || 'stand', pose: mb.pose || 'stand' }));
       const sc = addScene(kind, route[0], {
         actors: as, route, wi: 0, dirn: 1, T: rr(2, 8), ev: 0,
-        want: () => sc.nightKey <= E.keep,
+        want: o.want ? () => o.want(sc) : () => sc.nightKey <= E.keep,
         reset() { sc.wi = 0; sc.dirn = 1; sc.T = rr(2, 8); },
         step(dt) {
           sc.t += dt;
@@ -639,9 +913,11 @@ export function createPeople(scene, grid, opts = {}) {
   };
 
   // ── 잔디 소풍(봄·가을 낮): 돗자리 + 앉은 사람 2~3
-  const mkPicnic = () => {
+  // where(점) = 도시 지도에서 자리 조건(강변·공원 잔디), want = 나오는 조건(없으면 봄·가을 맑은 낮)
+  const mkPicnic = (where, want) => {
     for (let tries = 0; tries < 4000; tries++) {
       const c = randomPt();
+      if (where && !where(c)) continue;
       if (!okDisk(c[0], c[1], 2.5, BIT.GRASS) || !free(c[0], c[1], 2)) continue;
       const n = 2 + ri(2), pts = [[c[0] - 0.75, c[1]], [c[0] + 0.75, c[1] + 0.1], [c[0], c[1] + 1.1]].slice(0, n);
       if (!groupOk(pts, BIT.GRASS)) continue;
@@ -649,7 +925,7 @@ export function createPeople(scene, grid, opts = {}) {
       const as = pts.map((q) => mk(q[0], q[1], palNormal(), { pose: 'sit', pose0: 'sit' }));
       const sc = addScene('picnic', c, {
         actors: as, T: rr(2, 9),
-        want: () => (E.season === 0 || E.season === 2) && E.day > 0.5 && !E.rain,
+        want: want ? () => want(sc) : () => (E.season === 0 || E.season === 2) && E.day > 0.5 && !E.rain,
         step(dt) { sc.t += dt; if (sc.t >= sc.T) { sc.t = 0; sc.T = rr(5, 13); stats.picnic++; say(pick(as), pick([BUB.NOTE, BUB.SMILE, BUB.DOTS, BUB.HEART]), 2); } },
       });
       props.push({ type: 'mat', x: c[0], y: c[1] + 0.35, variant: ri(3), sc });
@@ -691,11 +967,11 @@ export function createPeople(scene, grid, opts = {}) {
   };
 
   // ── 겨울: 눈사람 옆의 아이 둘(눈싸움)과 보호자
-  const mkSnow = (c, r0, r1) => {
+  const mkSnow = (c, r0, r1, bits = BIT.PAVE) => {
     for (let tries = 0; tries < 200; tries++) {
       const p = c ? polar(c, r0, r1) : randomPt(), ang = rnd() * TAU, u = [Math.cos(ang), Math.sin(ang)], v = [-u[1], u[0]];
       const k1 = [p[0] + u[0] * 2.4, p[1] + u[1] * 2.4], k2 = [p[0] - u[0] * 2.4, p[1] - u[1] * 2.4], g = [p[0] + v[0] * 2.6, p[1] + v[1] * 2.6];
-      if (!groupOk([p, k1, k2, g]) || !okLine(k1[0], k1[1], k2[0], k2[1])) continue;
+      if (!groupOk([p, k1, k2, g], bits) || !okLine(k1[0], k1[1], k2[0], k2[1], bits)) continue;
       for (const q of [p, k1, k2, g]) claim(q[0], q[1]);
       const kids = [mk(k1[0], k1[1], LKid()), mk(k2[0], k2[1], LKid())], par = mk(g[0], g[1], palNormal());
       const sc = addScene('snow', p, {
@@ -742,9 +1018,9 @@ export function createPeople(scene, grid, opts = {}) {
     return null;
   };
   // 거리 음악가: 넓은 광장에서 기타를 친다. 연주가 시작되면 근처를 거닐던 사람들이 둘러서고, 끝나면 흩어진다(낮~밤).
-  const mkBusker = () => {
+  const mkBusker = (c0) => {
     for (let tries = 0; tries < 3000; tries++) {
-      const c = tries < 1500 ? polar([A.gate[0], PALACE[1] - 30], 4, 90) : randomPt();
+      const c = c0 ? polar(c0, 4, tries < 1500 ? 70 : 160) : tries < 1500 ? polar([A.gate[0], PALACE[1] - 30], 4, 90) : randomPt();
       if (inBox(c[0], c[1]) || clsAt(c[0], c[1]) !== 11 || !okDisk(c[0], c[1], tries < 1500 ? 4 : 6) || !free(c[0], c[1], 2)) continue;   // 궁 밖 보행로에서만(먼저 광화문 앞)
       if (!freeLine(c[0] - 4, c[1], c[0] + 4, c[1], 1.5) || !freeLine(c[0], c[1] - 4, c[0], c[1] + 4, 1.5)) continue;
       const b = mk(c[0], c[1], LA(cast.busker[0], { hat: 4, noUmb: true }), { prop: 'guitar' });
@@ -777,13 +1053,13 @@ export function createPeople(scene, grid, opts = {}) {
     return null;
   };
   // 벤치의 어르신 둘(담소). 벤치는 화면 가로 방향으로 놓는다.
-  const mkBench = (c0, r0, r1) => {
+  const mkBench = (c0, r0, r1, bits = BIT.PAVE, young = false) => {
     for (let tries = 0; tries < 400; tries++) {
       const c = c0 ? polar(c0, r0, r1) : randomPt(), pts = [[c[0] - ex[0] * 0.75, c[1] - ex[1] * 0.75], [c[0] + ex[0] * 0.75, c[1] + ex[1] * 0.75]];
-      if (!okDisk(c[0], c[1], 2.5) || !groupOk(pts) || !free(c[0], c[1], 2.2)) continue;
+      if (!okDisk(c[0], c[1], 2.5, bits) || !groupOk(pts, bits) || !free(c[0], c[1], 2.2)) continue;
       for (const q of pts) claim(q[0], q[1]);
       claim(c[0], c[1]);
-      const as = pts.map((q) => mk(q[0], q[1], LA(pick(cast.elder), { noUmb: true }), { pose: 'sit', pose0: 'sit', z: 0.45 }));
+      const as = pts.map((q, k) => mk(q[0], q[1], LA(young && k ? pick(cast.normal) : pick(cast.elder), { noUmb: true }), { pose: 'sit', pose0: 'sit', z: 0.45 }));
       const sc = addScene('bench', c, {
         actors: as, T: rr(2, 8),
         want: () => E.day > 0.4 && !E.rain && E.tod < 19 && sc.nightKey <= E.keep + 0.3,
@@ -795,10 +1071,10 @@ export function createPeople(scene, grid, opts = {}) {
     return null;
   };
   // 비눗방울 부는 아이와 보호자
-  const mkSoap = (c0, r0, r1) => {
+  const mkSoap = (c0, r0, r1, bits = BIT.PAVE) => {
     for (let tries = 0; tries < 400; tries++) {
       const c = polar(c0, r0, r1), g = [c[0] + 1.2, c[1] + 0.5];
-      if (!okDisk(c[0], c[1], 4) || !groupOk([c, g])) continue;
+      if (!okDisk(c[0], c[1], 4, bits) || !groupOk([c, g], bits)) continue;
       claim(c[0], c[1]); claim(g[0], g[1]);
       const kid = mk(c[0], c[1], LKid()), par = mk(g[0], g[1], palNormal());
       const sc = addScene('soap', c, {
@@ -846,12 +1122,13 @@ export function createPeople(scene, grid, opts = {}) {
     return null;
   };
   // 연 날리는 아이와 보호자(트인 마당)
-  const mkKite = () => {
+  const mkKite = (where, bits = BIT.PAVE) => {
     for (let tries = 0; tries < 2000; tries++) {
       const c = randomPt();
-      if (!okDisk(c[0], c[1], 7) || !free(c[0], c[1], 2)) continue;
+      if (where && !where(c)) continue;
+      if (!okDisk(c[0], c[1], 7, bits) || !free(c[0], c[1], 2)) continue;
       const g = [c[0] + 1.3, c[1] + 0.4];
-      if (!groupOk([c, g])) continue;
+      if (!groupOk([c, g], bits)) continue;
       claim(c[0], c[1]); claim(g[0], g[1]);
       const kid = mk(c[0], c[1], LKid(), { pose: 'cheer', pose0: 'cheer' }), par = mk(g[0], g[1], palNormal());
       const sc = addScene('kite', c, {
@@ -865,6 +1142,172 @@ export function createPeople(scene, grid, opts = {}) {
     return null;
   };
 
+  // ── 도시 지도(여의도) 장면. 자리는 classes.png 와 물까지 거리·랜드마크(지면 자리)로 고른다.
+  const inPark = (p) => PARKS.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < q[2]);
+  const riverLawn = (p) => !banned(p[0], p[1]) && dWater(p[0], p[1]) < 190;
+  const lawn = (p) => !banned(p[0], p[1]) && (dWater(p[0], p[1]) < 190 || inPark(p)) && clsAt(p[0], p[1]) === 3;
+  const nearBiz = (p, r = 420) => BIZ.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < r);
+  // 공원에 사람이 있는 때: 낮, 그리고 여름 저녁(한강공원은 한여름 저녁에 가장 붐빈다)
+  const outdoors = () => !E.rain && E.season !== 3 && (E.day > 0.5 || (E.season === 1 && E.tod >= 17 && E.tod < 21.7) || (E.season !== 3 && E.tod >= 17 && E.tod < 20));
+  const eveBoost = (sc) => sc.nightKey <= (E.season === 1 && E.tod >= 17 && E.tod < 21.7 ? 1 : E.day > 0.5 ? (E.season === 1 && E.tod >= 12 && E.tod < 16 ? 0.55 : 0.9) : 0.45);
+  // 잔디에 앉은 사람(혼자 또는 둘, 돗자리 없이)
+  const mkLawnSit = (where) => {
+    for (let tries = 0; tries < 3000; tries++) {
+      const c = randomPt();
+      if (!where(c) || !okDisk(c[0], c[1], 1.5, BIT.GRASS) || !free(c[0], c[1], 1.6)) continue;
+      const n = 1 + (rnd() < 0.55 ? 1 : 0), pts = n === 1 ? [c] : [[c[0] - ex[0] * 0.55, c[1] - ex[1] * 0.55], [c[0] + ex[0] * 0.55, c[1] + ex[1] * 0.55]];
+      if (!groupOk(pts, BIT.GRASS, 0.9)) continue;
+      for (const q of pts) claim(q[0], q[1]);
+      const as = pts.map((q) => mk(q[0], q[1], LA(pick(cast.sitters)), { pose: 'sit', pose0: 'sit' }));
+      const sc = addScene('lawn', c, {
+        actors: as, T: rr(3, 12),
+        want: () => outdoors() && E.tod >= 8.5 && eveBoost(sc),
+        step(dt) { sc.t += dt; if (sc.t >= sc.T) { sc.t = 0; sc.T = rr(6, 16); stats.lawn++; if (as.length > 1 || rnd() < 0.3) say(pick(as), pick([BUB.DOTS, BUB.NOTE, BUB.SMILE, BUB.HEART]), 2); } },
+      });
+      return sc;
+    }
+    return null;
+  };
+  // 공 던지기: 아이와 보호자(또는 어른 둘)가 5~7 m 떨어져 공을 주고받는다
+  const mkBall = (where) => {
+    for (let tries = 0; tries < 3000; tries++) {
+      const c = randomPt();
+      if (!where(c)) continue;
+      const ang = rnd() * TAU, d = rr(2.5, 3.5), p = [c[0] + Math.cos(ang) * d, c[1] + Math.sin(ang) * d], q = [c[0] - Math.cos(ang) * d, c[1] - Math.sin(ang) * d];
+      if (!okDisk(c[0], c[1], 4, BIT.GRASS) || !groupOk([p, q], BIT.GRASS, 3) || !free(c[0], c[1], 2)) continue;
+      claim(p[0], p[1]); claim(q[0], q[1]); claim(c[0], c[1]);
+      const kidish = rnd() < 0.65, a = mk(p[0], p[1], kidish ? LKid() : palNormal()), b = mk(q[0], q[1], palNormal());
+      const sc = addScene('ball', c, {
+        actors: [a, b], T: rr(1, 4), turn: 0,
+        want: () => outdoors() && E.tod >= 9 && E.tod < 20.5 && eveBoost(sc),
+        nudge() { sc.T = Math.min(sc.T, sc.t + 0.3); },
+        step(dt) {
+          sc.t += dt;
+          if (sc.hit > 0 && (sc.hit -= dt) <= 0) { const r2 = [a, b][1 - sc.turn]; r2.pose = 'stand'; hop(r2, 0.5); if (rnd() < 0.25) say(r2, pick([BUB.SMILE, BUB.BANG, BUB.NOTE]), 1.2); [a, b][sc.turn].pose = 'stand'; }
+          if (sc.t < sc.T) return;
+          sc.t = 0; sc.T = rr(1.8, 3.2); sc.turn = 1 - sc.turn; stats.ball++;
+          const th = [a, b][sc.turn], ca = [a, b][1 - sc.turn];
+          th.pose = 'cheer'; ca.pose = 'cheer'; sc.hit = 1.1;
+          fx.push({ type: 'ball', x: th.x, y: th.y, x1: ca.x, y1: ca.y, z: 1.2, t: 0, T: 1.1 });
+        },
+      });
+      return sc;
+    }
+    return null;
+  };
+  // 낚시: 물가(물에서 2~9 m)에 서거나 의자에 앉아 물 쪽으로 낚싯대를 드리운다
+  const mkFish = () => {
+    for (let tries = 0; tries < 6000; tries++) {
+      const c = randomPt();
+      const dw = dWater(c[0], c[1]);
+      if (dw < 2 || dw > 9 || banned(c[0], c[1]) || !tryPt(c[0], c[1], ANY)) continue;
+      // 물 쪽 = 거리가 줄어드는 방향(화면 가로 성분으로 왼쪽·오른쪽을 정한다)
+      let bx = 0, by = 0;
+      for (let k = 0; k < 8; k++) { const a2 = k * TAU / 8, d2 = dWater(c[0] + Math.cos(a2) * 6, c[1] + Math.sin(a2) * 6); bx -= Math.cos(a2) * d2; by -= Math.sin(a2) * d2; }
+      const sxw = bx * ex[0] + by * ex[1];
+      if (Math.abs(sxw) < 1e-3 || !free(c[0], c[1], 6)) continue;
+      claim(c[0], c[1]);
+      const sit = rnd() < 0.6, a = mk(c[0], c[1], LA(rnd() < 0.5 ? pick(cast.elder) : pick(cast.normal), { noUmb: rnd() < 0.5, hat: rnd() < 0.6 ? 1 + ri(8) : 0 }), { pose: sit ? 'sit' : 'stand', pose0: sit ? 'sit' : 'stand', prop: 'rod', z: sit ? 0.35 : 0, face: sxw > 0 ? 1 : -1 });
+      a.pose0 = a.pose; a.face0 = a.face;
+      const sc = addScene('fish', c, {
+        actors: [a], T: rr(8, 30),
+        want: () => !E.rain && ((E.tod >= 5 && E.tod < 21) || sc.nightKey < 0.3) && (E.season !== 3 || sc.nightKey < 0.35),
+        reset() { a.face = a.face0; },
+        step(dt) { sc.t += dt; a.face = a.face0; if (sc.t >= sc.T) { sc.t = 0; sc.T = rr(20, 60); stats.fish++; if (rnd() < 0.35) { say(a, pick([BUB.BANG, BUB.NOTE]), 1.6); hop(a, 0.6); } else say(a, BUB.DOTS, 1.4); } },
+      });
+      return sc;
+    }
+    return null;
+  };
+  // 물놀이(여름): 물빛광장 바닥분수에서 아이들이 뛰어다니고 보호자가 지켜본다
+  const mkSplash = (c0) => {
+    for (let tries = 0; tries < 2000; tries++) {
+      const c = polar(c0, 0, tries < 1000 ? 45 : 110);
+      if (clsAt(c[0], c[1]) !== 11 || !okDisk(c[0], c[1], 6) || !free(c[0], c[1], 3)) continue;
+      const kids = [], g = polar(c, 6.5, 8);
+      if (!tryPt(g[0], g[1])) continue;
+      for (let k = 0, t = 0; kids.length < 3 + (rnd() < 0.5 ? 1 : 0) && t < 80; t++) { const q = polar(c, 0.5, 4.5); if (tryPt(q[0], q[1]) && kids.every((o) => Math.hypot(o.x - q[0], o.y - q[1]) > 1.1)) { kids.push(mk(q[0], q[1], LKid())); k++; } }
+      if (kids.length < 3) { actors.length -= kids.length; continue; }
+      claim(c[0], c[1]); claim(g[0], g[1]);
+      const par = mk(g[0], g[1], palNormal());
+      const sc = addScene('splash', c, {
+        actors: [...kids, par], T: 0.5, C: c,
+        want: () => E.season === 1 && E.tod >= 10.5 && E.tod < 20.5 && !E.rain,
+        nudge() { sc.T = Math.min(sc.T, sc.t + 0.2); },
+        step(dt) {
+          sc.t += dt;
+          if (rnd() < dt * 9) { const a2 = rnd() * TAU, r2 = rnd() * 3.5; fx.push({ type: 'drop', x: c[0] + Math.cos(a2) * r2, y: c[1] + Math.sin(a2) * r2, z: 0, h: rr(1.2, 2.4), t: 0, T: rr(0.5, 0.8) }); }
+          if (sc.t < sc.T) return;
+          sc.t = 0; sc.T = rr(0.6, 1.6); stats.splash++;
+          const kd = pick(kids);
+          if (idle(kd)) {
+            const q = polar(c, 0.4, 4.6);
+            if (okLine(kd.x, kd.y, q[0], q[1]) && kids.every((o) => o === kd || Math.hypot(o.x - q[0], o.y - q[1]) > 1.0)) { kd.pose = 'run'; go(kd, [q], 2.6); }
+            else { kd.pose = 'cheer'; hop(kd, 0.8); say(kd, pick([BUB.NOTE, BUB.SMILE, BUB.BANG]), 1.2); }
+          }
+          for (const k2 of kids) if (idle(k2) && k2.pose === 'run') k2.pose = 'stand';
+          if (rnd() < 0.15) say(par, pick([BUB.SMILE, BUB.DOTS]), 1.5);
+        },
+      });
+      return sc;
+    }
+    return null;
+  };
+  const chatStop = (sc, as) => { if (sc.ev === 0) { sc.ev = 1; say(pick(as), pick([BUB.DOTS, BUB.SMILE, BUB.NOTE, BUB.DOTS]), 2); } };
+  const officeLook = () => LA(pick(cast.office), { cup: rnd() < 0.5 ? 1 : 0 });
+  function placeCity() {
+    const riverPts = [];   // 강변 달리기 띠의 점(약 60 m 간격): 강변 장면의 중심 후보
+    for (const c of cityRun) for (let d = 20; d < c.L - 20; d += 60) { pointAt(c.pts, c.cum, d, P3); riverPts.push([P3[0], P3[1]]); }
+    const rp = () => pick(riverPts);
+    const P = (k) => A[k] || null;
+    // 사진: 물빛광장·문화의마당·국회 앞·63빌딩 앞
+    for (const [k, n] of [['mulbit', 3], ['park_plaza', 2], ['assembly', 3], ['63', 1], ['hangang', 2]]) if (P(k)) for (let i = 0; i < n; i++) mkPhoto(P(k), 10, k === 'assembly' ? 140 : 90, i === 0);
+    // 국회 앞 안내 관광(작은 무리)
+    if (P('assembly')) {
+      const offs = block(6);
+      mkTroupe('guide', P('assembly'), 20, 170, offs.map((off, k) => (k === 0 ? { off, pal: LA(pick(cast.guide), { uniform: true }), prop: 'flag', lag: 0 } : { off, pal: LA(pick(cast.normal), { hat: rnd() < 0.5 ? 1 + ri(8) : 0 }), lag: 0.4 + k * 0.25 })),
+        { legs: 4, minLeg: 16, maxLeg: 42, gather: true, speed: 1.0, stopT: [9, 16], stop: guideStop, want: (sc) => E.tod >= 9.5 && E.tod < 17.5 && !E.rain && sc.nightKey < 0.9 });
+    }
+    // 업무지구 점심 무리(11:30~13:00): 직장인 3~5명, 커피 든 사람
+    for (let k = 0; k < 14 && BIZ.length; k++) {
+      const n = 3 + ri(3);   // 둘씩 나란히(0.9 m) 2~3 줄: 좁은 보도에도 들어간다
+      mkTroupe('lunch', BIZ[k % BIZ.length], 20, 320, Array.from({ length: n }, (_, j) => ({ off: [(j % 2) * 0.9, -Math.floor(j / 2) * 0.95], pal: officeLook(), lag: j * 0.15 })),
+        { legs: 4, minLeg: 10, maxLeg: 36, speed: 1.05, stopT: [3, 8], stop: chatStop, gap: 0.8, bits: BIT.PAVE | BIT.DIRT, want: (sc) => E.tod >= 11.45 + sc.nightKey * 0.25 && E.tod < 13.05 - sc.nightKey * 0.1 && !E.rain });
+    }
+    // 광장의 친구 무리(셀카·수다)와 강변 연인
+    for (const c of [P('mulbit'), P('park_plaza'), P('mulbit'), P('hangang'), P('park'), rp(), rp(), rp()]) {
+      if (!c) continue;
+      const n = 3 + ri(2), ang = sideAng();
+      mkTroupe('friends', c, 6, 120, Array.from({ length: n }, (_, k) => ({ off: [Math.cos(ang) * k * 1.05, Math.sin(ang) * k * 1.05], pal: palNormal(), lag: k * 0.2 })),
+        { legs: 4, minLeg: 12, maxLeg: 36, speed: 0.9, stopT: [4, 9], stop: hanbokStop, bits: BIT.PAVE | BIT.DIRT, want: (sc) => outdoors() && eveBoost(sc) });
+    }
+    for (let k = 0; k < 10; k++) {
+      const c = k < 2 && P('park') ? P('park') : rp();
+      if (!c) continue;
+      const ang = sideAng(), dry = LA(pick(cast.normal)), wet = LA(pick(cast.normal), { noUmb: true });
+      dry.h = 0.1;
+      mkTroupe('couple', c, 4, 90, [{ off: [0, 0], pal: dry, lag: 0 }, { off: [Math.cos(ang) * 0.8, Math.sin(ang) * 0.8], pal: wet, lag: 0 }],
+        { legs: 4, minLeg: 14, maxLeg: 40, speed: 0.85, stopT: [4, 10], stop: coupleStop, gap: 0.75, bits: BIT.PAVE | BIT.DIRT, want: (sc) => sc.nightKey <= Math.max(E.keep, E.tod >= 17 && E.tod < 22.5 ? 0.9 : 0) });
+    }
+    if (P('mulbit')) for (let k = 0; k < 3; k++) mkSplash(P('mulbit'));
+    for (const c of [P('mulbit'), P('park_plaza')]) if (c) mkBusker(c);
+    // 벤치(그늘 아래): 공원·강변 보행로 옆
+    for (let k = 0; k < 18; k++) { const c = k < 8 && P('park') ? P('park') : rp(); if (c) mkBench(c, 5, k < 8 ? 330 : 120, BIT.PAVE | BIT.DIRT, k % 3 === 2); }
+    for (let k = 0; k < 4; k++) { const c = P('park') || rp(); mkSoap(c, 10, 320, BIT.PAVE | BIT.DIRT | BIT.GRASS); }
+    for (let k = 0; k < 4; k++) mkSnow(k < 2 && P('park') ? P('park') : rp(), 5, 200, BIT.PAVE | BIT.DIRT | BIT.GRASS);
+    for (let k = 0; k < 12; k++) mkFish();
+    // 잔디: 소풍(돗자리)·앉은 사람·공놀이·연
+    const pw = (sc) => outdoors() && E.tod >= 10.5 && eveBoost(sc);   // 돗자리 소풍: 늦은 아침부터
+    for (let k = 0; k < 130; k++) mkPicnic(k < 100 ? (p) => riverLawn(p) && lawn(p) : lawn, pw);
+    for (let k = 0; k < 110; k++) mkLawnSit(k < 75 ? (p) => riverLawn(p) && lawn(p) : lawn);
+    for (let k = 0; k < 24; k++) mkBall(lawn);
+    for (let k = 0; k < 5; k++) mkKite((p) => riverLawn(p) && lawn(p), BIT.GRASS);
+    for (let k = 0; k < 4; k++) mkJogger();
+    // 소품이 놓인 땅 높이(굽기에서 잔디·광장이 z 0 보다 조금 높다): 그릴 때 그 높이로 올려 깊이 검사를 통과한다
+    const hA = opts.heightAt || (() => 0);
+    for (const p of props) { proj.project(p.x, p.y, 0, S); p.zg = Math.max(0, Math.min(1.2, hA(Math.floor(S[0]), Math.floor(S[1])))); }   // 그릴 때 같은 픽셀·그 면 깊이
+  }
+
   // ── 배치(고정 시드). 순서가 곧 자리 우선순위.
 
   // ── 광화문 앞 해치 한 쌍(고정 소품). 그림 타일에는 없어서 스프라이트로 세운다.
@@ -872,7 +1315,7 @@ export function createPeople(scene, grid, opts = {}) {
   // 실제 해치는 월대 남쪽 끝 좌우에 남쪽을 보고 앉아 있다 → 월대 남쪽 끝(깊이 맵에 월대가 없으면 정면에서 남쪽으로 24 m), 좌우로 14 m 를 목표로 하고,
   // 둘이 대칭을 유지한 채 가장 가까운 「보도·광장(클래스 11·1) + 걷는 경로에서 1.8 m 이상 + 예약 자리와 안 겹침」 자리를 클래스 맵으로 찾는다.
   const haechi = [];
-  {
+  if (!city) {
     const G0 = toWorld(783, 1218, [0, 0]);
     const paths = [];   // 근처를 지나는 걷는 경로의 점(1 m 간격)
     for (const w of walkers) for (let d = 0; d <= w.L; d += 1) { pointAt(w.pts, w.cum, d, P3); if (Math.abs(P3[0] - G0[0]) < 40 && Math.abs(P3[1] - G0[1] + 24) < 30) paths.push(P3[0], P3[1]); }
@@ -908,7 +1351,8 @@ export function createPeople(scene, grid, opts = {}) {
   // 차도(횡단보도 포함)는 건너지 않는다 → 보도가 끊기는 곳에서 구간이 나뉘고, 러너는 한 구간을 오간다.
   const RUNB = BIT.PAVE | BIT.DIRT;
   const runChains = [];
-  {
+  if (city) runChains.push(...cityRun);   // 도시: 강변 달리기 띠
+  else {
     // 궁은 차도로 둘러싸여 있고, 그 차도 안쪽 가장자리에 담길(보도, 클래스 1·11)이 가는 띠로 붙어 있다.
     // 궁 한가운데에서 사방으로 선을 쏘아 처음 만나는 차도를 찾고, 거기서 1.5~9 m 안쪽으로 물러나 보도 칸을 고른다 → 각도 순서대로 이으면 담길 한 바퀴.
     // 건물에 가려 차도가 안 보이는 방향은 엉뚱하게 먼 차도를 만나므로(반지름이 튄다) 그 자리에서 구간을 끊는다.
@@ -995,7 +1439,7 @@ export function createPeople(scene, grid, opts = {}) {
     const total = runChains.reduce((a, c) => a + c.L, 0);
     let id = 0;
     for (const c of runChains) {
-      const n = Math.max(1, Math.round(RUN_GROUPS * c.L / total));
+      const n = Math.max(1, Math.round((city ? RUN_GROUPS_CITY : RUN_GROUPS) * c.L / total));
       for (let k = 0; k < n; k++, id++) {
         const h = hash01(id * 53 + 7), crew = hash01(id * 59 + 3) < 0.38 ? 1 + Math.floor(hash01(id * 61 + 11) * 4) : 0;   // 뒤따르는 사람 수 0 또는 1~4
         const fol = Array.from({ length: crew }, (_, j) => ({ dd: -(j + 1) * 1.7, look: RL(hash01(id * 67 + j * 13 + 1)) }));
@@ -1068,7 +1512,65 @@ export function createPeople(scene, grid, opts = {}) {
       for (let n = 0; n < 5 && r.lat && !latOk(r); n++) r.lat -= Math.sign(r.lat) * Math.min(Math.abs(r.lat), 0.05);
     }
   };
-  const ceremony = mkCeremony();
+  // ── 자전거(도시 지도): 강변 자전거 띠와 이름 붙은 자전거길(map.json walk_paths 의 「…자전거길」)을 따라 달린다.
+  //    혼자 또는 2~3대 무리, 3대 중 1대쯤은 공공자전거(초록 차체). 오른쪽 통행(진행 방향 오른쪽 0.9 m). u = 접지 않고 잰 거리(왕복).
+  const bikes = [], bikeChains = [];
+  if (city) {
+    bikeChains.push(...cityBike);
+    for (const w of scene.walkers) if (/자전거/.test(w.name || '') && !bikeChains.some((c) => c.src === w.pts)) { const cum = cumLengths(w.pts); if (cum[cum.length - 1] > 60) bikeChains.push({ pts: w.pts, cum, L: cum[cum.length - 1], src: w.pts }); }
+    const total = bikeChains.reduce((a, c) => a + c.L, 0), RIDER = riderPals(cast);
+    let id = 0;
+    for (const c of bikeChains) {
+      const n = Math.max(1, Math.round(BIKE_GROUPS * c.L / total));
+      for (let k = 0; k < n; k++, id++) {
+        const crew = hash01(id * 41 + 3) < 0.34 ? 1 + Math.floor(hash01(id * 43 + 5) * 2) : 0;
+        const look = (h) => ({ fam: 'bike', pal: Math.floor(h * RIDER.length), frame: fr(h * 13) < 0.32 ? 0 : 1 + Math.floor(fr(h * 7) * 5), h, helmet: fr(h * 3) < 0.45 });
+        const v = 4 + 2 * hash01(id * 53 + 7);
+        bikes.push({ id, c, u: hash01(id * 47 + 1) * 2 * c.L, ou: 0, v, cv: v, lim: v, look: look(hash01(id * 59 + 11)), fol: Array.from({ length: crew }, (_, j) => ({ dd: -(j + 1) * 2.7, look: look(hash01(id * 61 + j * 17 + 3)) })),
+          key: crew ? 0.05 + 0.95 * hash01(id * 67 + 2) : hash01(id * 67 + 2), vis: true, dir: 0 });
+      }
+    }
+    for (const b of bikes) b.ou = b.u;
+  }
+  const BG = Math.hypot(ey[0], ey[1]);
+  // 자전거(또는 dd 만큼 뒤의 동행) 자리와 화면 방향: 0 오른쪽, 1 왼쪽, 2 아래(다가옴), 3 위(멀어짐)
+  const bpos = (b, al, out, dd = 0) => {
+    const c = b.c, u = b.ou + (b.u - b.ou) * al + dd, d = rfold(c, u), dir = rdir(c, u);
+    pointAt(c.pts, c.cum, d, out);
+    pointAt(c.pts, c.cum, Math.min(c.L, d + 1.5), RT); pointAt(c.pts, c.cum, Math.max(0, d - 1.5), RN);
+    let tx = RT[0] - RN[0], ty = RT[1] - RN[1]; const tl = Math.hypot(tx, ty) || 1; tx = tx / tl * dir; ty = ty / tl * dir;
+    out[0] += ty * 0.9; out[1] -= tx * 0.9;
+    const sx = tx * ex[0] + ty * ex[1], sy = -(tx * ey[0] + ty * ey[1]) / BG;
+    return Math.abs(sx) >= Math.abs(sy) * 0.8 ? (sx >= 0 ? 0 : 1) : (sy > 0 ? 2 : 3);
+  };
+  // 시각별 자전거 비율: 해 질 녘~밤 9시 반에 가장 많고, 아침 출근길에도 조금
+  const bikeFrac = (t) => (t >= 18 && t < 21.5 ? 0.95 : t >= 16 && t < 18 ? 0.65 : t >= 7 && t < 9.5 ? 0.45 : t >= 9.5 && t < 16 ? 0.4 : t >= 21.5 && t < 23 ? 0.4 : t >= 5.5 && t < 7 ? 0.2 : 0.05);
+  const wantB = (b) => b.key < bikeFrac(E.tod) * (E.rain ? 0.12 : 1) * (E.season === 3 ? 0.35 : E.season === 1 ? 1 : 0.9);
+  const BP = [0, 0, 0];
+  const stepBikes = (dt, first) => {
+    for (const b of bikes) {
+      b.ou = b.u;
+      const want = wantB(b);
+      if (want !== b.vis) { bpos(b, 1, BP); proj.project(BP[0], BP[1], 0, S); if (first || !inView(S[0], S[1], 40)) b.vis = want; }
+      if (b.vis && (stepN + b.id) % 3 === 0) {
+        // 같은 띠·같은 방향으로 앞서가는 느린 자전거 무리가 가까우면 그 속도에 맞춘다(겹쳐 지나가지 않게)
+        let lim = b.v; const d0 = rfold(b.c, b.u), dn = rdir(b.c, b.u);
+        for (const o of bikes) {
+          if (o === b || !o.vis || o.c !== b.c || rdir(o.c, o.u) !== dn) continue;
+          const gap = (rfold(o.c, o.u) - d0) * dn - 2.7 * o.fol.length;
+          if (gap > 0 && gap < 5) lim = Math.min(lim, o.cv);
+        }
+        b.lim = lim;
+      }
+      b.cv += ((b.vis ? b.lim : b.v) - b.cv) * Math.min(1, dt * 2);
+      b.u += b.cv * dt;
+    }
+  };
+  const sideAng = () => Math.atan2(ex[1], ex[0]) + rr(-0.35, 0.35) + (rnd() < 0.5 ? Math.PI : 0);
+  const block = (n) => Array.from({ length: n }, (_, k) => (k === 0 ? [0, 0] : [((k - 1) % 2) * 1.2 - 0.6, -1.2 - Math.floor((k - 1) / 2) * 1.15]));
+  const ceremony = city ? null : mkCeremony();
+  if (city) placeCity();
+  else {
   if (opts.birds) { let n = 0; for (const f of opts.birds.flocks) { if (n >= 5) break; if (mkPigeon(f)) n++; } }
   for (const [c, r0, r1, n] of [[A.gate, 14, 55, 3], [A.geun, 14, 50, 2], [A.gyeong, 18, 60, 2], [A.hyang, 8, 50, 2]]) for (let k = 0; k < n; k++) mkPhoto(c, r0, r1, k === 0);
   for (let k = 0; k < 3; k++) mkPhoto(null, 0, 0, false);
@@ -1077,8 +1579,6 @@ export function createPeople(scene, grid, opts = {}) {
   for (const h of haechi) for (let k = 0; k < 2; k++) { const sc = mkPhoto([h.x, h.y - 5], 1.5, 7, k === 0, false, true); if (sc) { sc.nightKey = rnd() * 0.4; sc.haechi = true; } }
   for (let k = 0; k < 4; k++) { const sc = mkPhoto([A.gate[0], PALACE[1] - 30], 4, 60, false, false, true); if (sc) sc.nightKey = rnd() * 0.25; }
   // 나란히 걷는 일행은 화면 가로 방향(±20°)으로 늘어선다 → 서로 가리지 않는다
-  const sideAng = () => Math.atan2(ex[1], ex[0]) + rr(-0.35, 0.35) + (rnd() < 0.5 ? Math.PI : 0);
-  const block = (n) => Array.from({ length: n }, (_, k) => (k === 0 ? [0, 0] : [((k - 1) % 2) * 1.2 - 0.6, -1.2 - Math.floor((k - 1) / 2) * 1.15]));
   for (const c of [A.geun, A.gate]) {
     const offs = block(8);
     mkTroupe('guide', c, 10, 50, offs.map((off, k) => (k === 0 ? { off, pal: LA(pick(cast.guide), { uniform: true }), prop: 'flag', lag: 0 } : { off, pal: palNormal(), lag: 0.4 + k * 0.25 })),
@@ -1103,6 +1603,7 @@ export function createPeople(scene, grid, opts = {}) {
   mkKite(); mkKite(); mkBusker(); mkProposal();
   mkCat(A.seochon); mkCat(A.bukchon); mkCat(A.sejong);
   for (let k = 0; k < 3; k++) mkJogger();
+  }
   RR = R1;
   for (const sc of scenes) if (!wants(sc)) setOn(sc, false);
   if (ceremony) ceremony.reset();
@@ -1193,7 +1694,38 @@ export function createPeople(scene, grid, opts = {}) {
   const react = (a) => { const pet = a.look.fam === 'cat' || a.look.fam === 'dog'; a.waveT = 2.2; hop(a, 1.2); say(a, pet ? BUB.HEART : pick([BUB.HEART, BUB.NOTE, BUB.SMILE]), 2.2); };
 
   // ── 시간대·날씨에 따라 나오고 들어가기. 화면 밖(또는 사람이 점으로 보일 만큼 멀리서 볼 때)에서만 바뀐다.
+  // 도시 지도: 동네별 시각 곡선(시작 시각, 비율 — 다음 시작까지) × 계절 × 비 × 유형. key < 비율이면 나온다.
+  //   공원 k 는 낮에 많고 밤엔 한산, 강변 r 은 여름 저녁에 가장 붐비고, 업무지구 b 는 출근·점심·퇴근 때 몰린다.
+  const ZF = {
+    k: [[0, 0.03], [5.5, 0.2], [7, 0.35], [9, 0.5], [11, 0.75], [14, 0.85], [18, 0.75], [21, 0.32], [23, 0.07]],
+    r: [[0, 0.05], [5, 0.3], [7, 0.4], [10, 0.45], [16, 0.65], [18, 0.92], [21.5, 0.5], [23.5, 0.08]],
+    b: [[0, 0.04], [6, 0.2], [7.3, 0.95], [9.3, 0.35], [11.4, 0.92], [13.2, 0.35], [17.5, 0.92], [19.5, 0.35], [22, 0.08]],
+    a: [[0, 0.03], [8, 0.3], [9.5, 0.6], [17.5, 0.3], [20, 0.05]],
+    s: [[0, 0.06], [6, 0.35], [8, 0.65], [21, 0.3], [23, 0.08]],
+  };
+  const zf = (z, t) => { let v = ZF[z][0][1]; for (const [h, f] of ZF[z]) if (t >= h) v = f; return v; };
+  const cityFrac = (w) => {
+    const t = E.tod, z = w.zone, ty = w.type, s = E.season;
+    let f = ty === T.OFFICE && z !== 'b' && z !== 'a' ? zf('b', t) * 0.6 : zf(z, t);
+    if (s === 3) f *= { k: 0.45, r: 0.35, b: 0.95, a: 0.7, s: 0.8 }[z];
+    else if (s === 1 && (z === 'r' || z === 'k')) f *= t >= 17 && t < 22 ? 1.1 : t >= 11 && t < 16 ? 0.6 : 1;
+    else if (z === 'r' || z === 'k') f *= 1.05;
+    if (E.rain) f *= ty === T.OFFICE ? 0.8 : 0.3;
+    switch (ty) {
+      case T.JOGGER: f *= E.rain ? 0 : ((t >= 5.5 && t < 9.5) || (t >= 17 && t < 22) ? 1 : t >= 9.5 && t < 17 ? 0.35 : 0.1) * (s === 3 ? 0.5 : 1); break;
+      case T.PARENT: case T.STROLLER: if (t < 9 || t >= 20.5) f = 0; break;
+      case T.ELDER: if (t < 6 || t >= 19.5) f = 0; break;
+      case T.DOG: if (t < 6 || t >= 23) f *= 0.2; break;
+      case T.STUDENT: if (t < 7 || t >= 22) f = 0; break;
+      case T.CLEANER: f = t >= 5 && t < 10 ? 1 : 0.3; break;
+      case T.TOURIST: if (t < 8.5 || t >= 22) f = 0; break;
+      default: break;
+    }
+    return Math.min(1, f);
+  };
+  const wantCity = (w) => w.key < cityFrac(w);
   const wantW = (w) => {
+    if (city) return wantCity(w);
     if (w.night > E.keep) return false;
     const t = E.tod, k = w.key;
     if (E.rain && k > 0.62 && w.type !== T.OFFICE) return false;
@@ -1252,11 +1784,12 @@ export function createPeople(scene, grid, opts = {}) {
     hanbok: () => 'hanbok', guide: () => 'guide', bench: () => 'bench', picnic: () => 'picnic', snow: () => 'snow', kite: () => 'kite', soap: () => 'soap', cat: () => 'cat',
     ceremony: (sc) => sc.st !== 'idle' && 'ceremony', classphoto: (sc) => sc.st !== 'idle' && 'classphoto', photo: (sc) => sc.st !== 'idle' && E.day < 0.3 && 'nightphoto',
     pigeon: (sc) => (sc.st === 'run' || sc.st === 'cheer') && 'pigeon', busk: (sc) => sc.st === 'play' && 'busk', proposal: (sc) => sc.st === 'ask' && 'proposal', couple: () => E.rain && 'share',
+    ball: () => 'ball', fish: () => 'fish', splash: () => 'splash', lunch: () => 'lunch',
   };
 
   let stepN = 0;
   const sys = {
-    haechi, runners, runChains, rpos, runFrac, toPx: (x, y) => { proj.project(x, y, 0, S); return [S[0], S[1]]; },
+    haechi, runners, runChains, rpos, runFrac, bikes, bikeChains, bpos, city, cityGeo: city ? { run: cityRun, bike: cityBike, side: citySide, prom: cityProm } : null, isleN: () => isleN, dWater, toPx: (x, y) => { proj.project(x, y, 0, S); return [S[0], S[1]]; },
     time: 0, rainT: 0, actors, guests, scenes, props, fx, floaters, walkers, standing, ov, stats, wpos, toWorld, env: E, ceremony, cast, clsAt, zAt, hrAt, platCells, hidden, inPalace, pairCount: pairs.length / 2,
     wdir: (i) => walkers[i].dir,
     step(dt, env = {}) {
@@ -1276,6 +1809,7 @@ export function createPeople(scene, grid, opts = {}) {
         if (sc.on) sc.step(dt);
       }
       stepRunners(dt, stepN === 1);
+      if (city) stepBikes(dt, stepN === 1);
       for (const a of actors) if (a.on) stepActor(a, dt);
       for (const g of guests) stepActor(g, dt);
       for (let k = folFx.length - 1; k >= 0; k--) { const e = folFx[k]; if (e.f.hop > 0) e.f.hop = Math.max(0, e.f.hop - dt); if ((e.t -= dt) <= 0) { e.f.bub = 0; e.f.hop = 0; folFx.splice(k, 1); } }
@@ -1330,6 +1864,10 @@ export function createPeople(scene, grid, opts = {}) {
       }
       for (const h of haechi) if (inV(h.x, h.y) && !out.includes('haechi')) out.push('haechi');
       for (const mt of meets) { const k = mt.kind === 'kiddog' ? 'dogmeet' : mt.kind; if ((k === 'dogmeet' || k === 'askphoto') && inV(mt.a.x, mt.a.y) && !out.includes(k)) out.push(k); }
+      if (city) {
+        for (const b of bikes) if (b.vis && b.fol.length && !out.includes('bikecrew')) { bpos(b, 1, BP); if (inV(BP[0], BP[1]) && !hidden(BP[0], BP[1])) out.push('bikecrew'); }
+        for (const r of runners) if (r.vis && r.fol.length >= 2 && !out.includes('runcrew')) { rpos(r, 1, BP); if (inV(BP[0], BP[1]) && !hidden(BP[0], BP[1])) out.push('runcrew'); }
+      }
       return out;
     },
     // 궁 안 방문객 구성(수문장·안내원·동물 제외). test 와 조정용.
@@ -1370,12 +1908,24 @@ export function createPeople(scene, grid, opts = {}) {
       }
       return meets.slice(n).map((mt) => { proj.project(mt.a.x, mt.a.y, 0, S); return { x: S[0], y: S[1], kind: mt.kind }; });
     },
+    // 지금 나와 있는 사람·자전거 수(동행 포함). v = [x0, y0, x1, y1] 지도 px 를 주면 그 안만(가려진 자리 포함). 측정·테스트용.
+    counts(v = null) {
+      const inV = (x, y, z = 0) => { if (!v) return true; proj.project(x, y, z, S); return S[0] >= v[0] && S[0] < v[2] && S[1] >= v[1] && S[1] < v[3]; };
+      const o = { walkers: 0, actors: 0, runners: 0, bikes: 0 };
+      walkers.forEach((w, i) => { if (!w.vis || ov.skip[i]) return; wpos(i, sys.time, P3); if (inV(P3[0], P3[1])) o.walkers += 1 + w.fol.length; });
+      for (const a of actors) if (a.on && inV(a.x, a.y)) o.actors++;
+      for (const g of guests) if (inV(g.x, g.y)) o.actors += 1 + g.fol.length;
+      for (const r of runners) if (r.vis) { rpos(r, 1, P3); if (inV(P3[0], P3[1])) o.runners += 1 + r.fol.length; }
+      for (const b of bikes) if (b.vis) { bpos(b, 1, P3); if (inV(P3[0], P3[1])) o.bikes += 1 + b.fol.length; }
+      o.people = o.walkers + o.actors + o.runners;
+      return o;
+    },
     find(kind) { return scenes.filter((s) => s.kind === kind).map((s) => { proj.project(s.actors[0].x, s.actors[0].y, 0, S); return { x: S[0], y: S[1], on: s.on, st: s.st }; }); },
     // 유형별로 지금 보이는 걷는 사람의 위치(지도 px). 캡처용.
     findType(type, zone) { const out = []; walkers.forEach((w, i) => { if (w.type === type && w.vis && (!zone || w.zone === zone)) { wpos(i, sys.time, P3); if (!hidden(P3[0], P3[1])) { proj.project(P3[0], P3[1], 0, S); out.push({ x: S[0], y: S[1], wi: i }); } } }); return out; },
     meets,
     snapshot() {
-      return { runners: runners.map((r) => [r.vis ? 1 : 0, r.u, r.lat, r.hold]), time: sys.time, stats: { ...stats }, rs: R1.rs, off: Array.from(ov.off), vis: walkers.map((w) => (w.vis ? 1 : 0)).join(''), actors: actors.map((a) => [a.on ? 1 : 0, a.x, a.y, a.pose, a.bubble]), guests: guests.map((g) => [g.wi, g.x, g.y, g.bubble]), scenes: scenes.map((s) => [s.on ? 1 : 0, s.st]) };
+      return { ...(city ? { bikes: bikes.map((b) => [b.vis ? 1 : 0, +b.u.toFixed(4)]) } : {}), runners: runners.map((r) => [r.vis ? 1 : 0, r.u, r.lat, r.hold]), time: sys.time, stats: { ...stats }, rs: R1.rs, off: Array.from(ov.off), vis: walkers.map((w) => (w.vis ? 1 : 0)).join(''), actors: actors.map((a) => [a.on ? 1 : 0, a.x, a.y, a.pose, a.bubble]), guests: guests.map((g) => [g.wi, g.x, g.y, g.bubble]), scenes: scenes.map((s) => [s.on ? 1 : 0, s.st]) };
     },
   };
   return sys;

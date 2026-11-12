@@ -93,7 +93,8 @@ export function createMovers(scene, proj) {
     }
   }
 
-  function emitVehicles(R, vehicles, alpha, nightAmt) {
+  // vr = [x0, y0, x1, y1] 보이는 지도 px(없으면 전부). 밖으로 48 px(전조등 빛 웅덩이 반경) 넘게 나간 차는 내지 않는다 → 그려지는 픽셀은 같다.
+  function emitVehicles(R, vehicles, alpha, nightAmt, vr = null) {
     const lightsOn = nightAmt > 0.35;
     const hi = R.hi, q = hi ? hi.SS : 1;
     // 깊은 단계: 전조등·미등 점을 지도 1 px(0.5 m) 대신 0.2 m 점으로
@@ -107,6 +108,7 @@ export function createMovers(scene, proj) {
       const fr = vehFrames.get(v.kind + '|' + v.color)?.[h];
       if (!fr) continue;
       proj.project(x, y, z, S);
+      if (vr && (S[0] < vr[0] - 48 || S[0] > vr[2] + 48 || S[1] < vr[1] - 48 || S[1] > vr[3] + 48)) continue;
       const dep = S[2];
       if (hi && hi.vehFrames[v.kind]) {
         // 깊은 단계: 그 해상도로 래스터화한 차종 모형(색은 셰이더가 칠한다)

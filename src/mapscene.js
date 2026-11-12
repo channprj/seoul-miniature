@@ -4,8 +4,9 @@
 //   landmarks {key: {name, px:[x, y](지도 px)}}, lanes [{highway, pts:[[x,y,z]]}], walk_paths [{pts}]
 import { hash01 } from './geom.js';
 
-const SPECS = { sedan: [4.7, 1.85, 1.45], suv: [4.8, 1.95, 1.75], taxi: [4.7, 1.8, 1.5], bus: [11.0, 2.5, 3.2], van: [5.2, 1.95, 2.0] };
-const COLORS = { sedan: ['#f4f4f0', '#c9ccd0', '#2a2c30', '#7d838a', '#33507a', '#a8322c'], suv: ['#2a2c30', '#f4f4f0', '#7d838a'], taxi: ['#f08a24', '#c9ccd0'], bus: ['#3a7bd5', '#4caf50', '#e53935'], van: ['#f4f4f0', '#8a9098'] };
+// truck = 소형 화물차(앞 운전칸 + 뒤 짐칸 상자). 글자·로고 없음.
+const SPECS = { sedan: [4.7, 1.85, 1.45], suv: [4.8, 1.95, 1.75], taxi: [4.7, 1.8, 1.5], bus: [11.0, 2.5, 3.2], van: [5.2, 1.95, 2.0], truck: [6.2, 2.05, 2.6] };
+const COLORS = { sedan: ['#f4f4f0', '#c9ccd0', '#2a2c30', '#7d838a', '#33507a', '#a8322c'], suv: ['#2a2c30', '#f4f4f0', '#7d838a'], taxi: ['#f08a24', '#c9ccd0'], bus: ['#3a7bd5', '#4caf50', '#e53935'], van: ['#f4f4f0', '#8a9098'], truck: ['#2f5fa8', '#f4f4f0', '#3a8a5a'] };
 const SHIRTS = ['#e8e4da', '#3b4a66', '#a8322c', '#4f7f5a', '#d9a441', '#6c5a8e', '#2f2f35', '#c7d3e0'], PANTS = ['#3b4a66', '#1e1e22', '#6b6258'], HAIR = ['#141210', '#3a2a20', '#7a5a40'];
 
 export function sceneFromMap(m) {
@@ -30,7 +31,9 @@ export function sceneFromMap(m) {
   const frames = [];
   for (const k of Object.keys(COLORS)) for (const col of COLORS[k]) frames.push({ kind: k, color: col });
   const anchors = {};
-  for (const [k, v] of Object.entries(m.landmarks || {})) if (v && v.px) anchors[k] = v.px;
+  // anchors_ground = 그 랜드마크가 땅에 닿는 자리(타워는 ground_px). 사람·장면 자리 찾기에 쓴다(바로가기·둘러보기는 anchors).
+  const anchorsGround = {};
+  for (const [k, v] of Object.entries(m.landmarks || {})) if (v && v.px) { anchors[k] = v.px; anchorsGround[k] = v.ground_px || v.px; }
   return {
     schema: 'map-json', name: m.name,
     camera: { res: [W, H], m_per_px_screen: mpp, cx: c.SX0 + W * mpp / 2, cy: c.SY1 - H * mpp / 2, cam_location: c.cam_ref, view_dir: vd, screen_x_axis: ex, screen_y_axis: ey },
@@ -38,6 +41,6 @@ export function sceneFromMap(m) {
     sun: m.sun || { euler_deg: [50, 0, c.theta - 73], shadow_tint: [0.6, 0.64, 0.74] },
     lanes, walkers, walker_palette: palette, walker_pal_idx: pal, standing: [],
     vehicle_specs: SPECS, vehicle_atlas: { headings: 32, frames },
-    anchors,
+    anchors, anchors_ground: anchorsGround,
   };
 }

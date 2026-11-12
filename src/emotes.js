@@ -7,7 +7,7 @@
 // 셰이더(render.js): kind 1 = 기본 아틀라스 사람(줄별 깊이 + 룩 2 채도), kind 10 = 깊은 단계 아틀라스 사람, kind 9 = 깊은 단계 색 그대로(말풍선·돗자리·연),
 //   kind 3(그림자), kind 4(플래시), kind 6(흰 점). 기본 단계의 「색 그대로」는 R.flatKind 가 있으면 그것, 없으면 kind 1.
 import { PERSON } from './movers.js';
-import { addCast, BUB, SIM_DT } from './sim/people.js';
+import { addCast, BUB, SIM_DT, riderPals } from './sim/people.js';
 
 const TAU = Math.PI * 2;
 const rgb = (hex) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
@@ -209,6 +209,10 @@ const O = {
     if (x > 1.7 && x < 3.9 && y > -1.8 && y < 1.5) return x > 3.55 || y < -1.45 || y > 1.15 ? 'B' : ell(x, y, 2.75, -0.15, 0.5, 0.7) ? 'B' : 'A';
     return null;
   },
+  // 낚싯대(오른쪽을 본다): 손(1.5, 4.3)에서 비스듬히 위로, 끝에서 줄이 물 쪽으로 늘어진다
+  rod: (x, y) => (seg(x, y, 1.4, 4.4, 6.6, -0.6, 0.13) ? 'K' : Math.abs(x - 6.7) < 0.09 && y > -0.6 && y < 7.6 ? 'W' : ell(x, y, 1.5, 4.3, 0.3, 0.3) ? 'S' : null),
+  // 테이크아웃 커피(오른손)
+  cup: (x, y) => (Math.abs(x - 1.55) <= 0.3 && y >= 3.75 && y < 4.75 ? (y < 3.95 ? 'W' : y >= 4.1 && y < 4.45 ? 'B' : 'A') : null),
   guitar: (x, y) => (ell(x, y, 0.35, 4.45, 0.3, 0.3) ? 'K' : ell(x, y, 0.3, 4.5, 1.0, 0.78) || ell(x, y, -0.5, 4.3, 0.6, 0.55) ? 'A' : seg(x, y, 1.0, 4.1, 2.5, 2.9, 0.16) ? 'B' : null),
   // 겨울 한복: 털 배자(조끼)
   vest: (x, y) => (y >= 2.25 && y < 4.3 && Math.abs(x) <= 1.25 && Math.abs(x) > 0.2 ? (y < 2.6 || Math.abs(x) < 0.42 ? 'B' : 'A') : null),
@@ -257,9 +261,52 @@ const G = {
     if (seg(x, y, -1.0, 7.5, -1.9, 6.8, 0.1) || seg(x, y, 1.0, 7.5, 1.9, 6.8, 0.1)) return 'T';
     return ell(x, y, 0, 6.3, 0.8, 0.78) || ell(x, y, 0, 7.95, 1.15, 1.05) ? 'W' : null;
   },
+  // 도시 지도용 큰 돗자리(1 m/px 지도에서 앉은 사람에 다 가리지 않게)
+  matBig: (x, y) => { const xx = x - (8 - y) * 0.45; return y >= 5.0 && y < 9.4 && Math.abs(xx) <= 4.8 ? ((Math.floor((xx + 6) / 1.0) + Math.floor(y / 0.8)) & 1 ? 'A' : 'B') : null; },
   mat: (x, y) => { const xx = x - (8 - y) * 0.45; return y >= 6.4 && y < 9 && Math.abs(xx) <= 3.3 ? ((Math.floor((xx + 4) / 0.8) + Math.floor(y / 0.65)) & 1 ? 'A' : 'B') : null; },
   kite: (x, y) => (Math.abs(x) / 1.5 + Math.abs(y - 2) / 1.9 <= 1 ? (x * (y - 2) > 0 ? 'A' : 'B') : seg(x, y, 0, 3.9, 0.5, 5.2, 0.12) || seg(x, y, 0.5, 5.2, -0.2, 6.3, 0.12) ? 'B' : null),
 };
+// 자전거 탄 사람. 옆모습(오른쪽으로 달림)·앞모습(다가옴)·뒷모습(멀어짐). f = 페달 0·1. 글자·로고 없음.
+//   B 차체, K 바퀴·핸들, C 윗옷, c 소매, P 바지, F 신발, H 머리(헬멧이면 헬멧 색), S 피부
+function bikeSide(x, y, f) {
+  const wr = Math.hypot(x - 2.3, y - 8.55), wl = Math.hypot(x + 2.3, y - 8.55);
+  // 사람(앞): 머리·몸·팔·다리
+  const h = head(x - 1.0, y - 0.6);
+  if (h) return h;
+  if (seg(x, y, 0.9, 3.4, 2.0, 5.35, 0.27)) return 'c';
+  if (ell(x, y, 2.05, 5.4, 0.26, 0.26)) return 'S';
+  if (seg(x, y, -0.55, 5.55, 0.75, 3.2, 0.62)) return 'C';
+  const pf = f ? [-0.55, 8.15] : [0.65, 8.75], pb = f ? [0.65, 8.75] : [-0.55, 8.15];
+  const kf = [pf[0] + 0.95, (5.7 + pf[1]) / 2 - 0.55];
+  if (seg(x, y, -0.5, 5.7, kf[0], kf[1], 0.36) || seg(x, y, kf[0], kf[1], pf[0], pf[1] - 0.25, 0.3)) return 'P';
+  if (ell(x, y, pf[0] + 0.15, pf[1], 0.42, 0.24)) return 'F';
+  // 차체·바퀴
+  if (seg(x, y, -0.6, 5.85, 0.05, 8.35, 0.17) || seg(x, y, 0.05, 8.35, 1.9, 5.7, 0.17) || seg(x, y, -2.3, 8.55, 0.05, 8.35, 0.15) || seg(x, y, -2.3, 8.55, -0.55, 6.0, 0.15) || seg(x, y, 1.9, 5.7, 2.3, 8.55, 0.15)) return 'B';
+  if (seg(x, y, -1.05, 5.75, -0.2, 5.75, 0.17) || seg(x, y, 1.85, 5.65, 1.95, 5.05, 0.14)) return 'K';
+  // 뒤쪽 다리(차체 너머라 조금 어둡게)
+  const kb = [pb[0] + 0.95, (5.7 + pb[1]) / 2 - 0.55];
+  if (seg(x, y, -0.5, 5.7, kb[0], kb[1], 0.32) || seg(x, y, kb[0], kb[1], pb[0], pb[1] - 0.25, 0.27)) return 'p';
+  if (ell(x, y, pb[0] + 0.15, pb[1], 0.38, 0.22)) return 'F';
+  if ((wr <= 1.35 && wr >= 1.0) || (wl <= 1.35 && wl >= 1.0)) return 'K';
+  if (wr < 0.22 || wl < 0.22) return 'w';
+  return null;
+}
+function bikeFront(x, y, f, back) {
+  const ax = Math.abs(x);
+  const h = head(x, y - 0.4);
+  if (h) return back && h === 'S' && y - 0.4 < 2.0 ? 'H' : h;
+  if (seg(x, y, -1.05, 3.1, -1.45, 5.2, 0.27) || seg(x, y, 1.05, 3.1, 1.45, 5.2, 0.27)) return 'c';
+  if (!back && (ell(x, y, -1.45, 5.3, 0.25, 0.25) || ell(x, y, 1.45, 5.3, 0.25, 0.25))) return 'S';
+  if (y >= 2.65 && y < 5.6 && ax <= (y < 3.1 ? 1.2 - (3.1 - y) * 0.9 : 1.15)) return 'C';
+  if (Math.abs(y - 5.3) < 0.16 && ax <= 1.7) return 'K';
+  const lu = f ? 7.55 : 8.25, ru = f ? 8.25 : 7.55;
+  if (seg(x, y, -0.45, 5.6, -0.6, lu, 0.38) || seg(x, y, 0.45, 5.6, 0.6, ru, 0.38)) return 'P';
+  if (ell(x, y, -0.6, lu + 0.25, 0.36, 0.22) || ell(x, y, 0.6, ru + 0.25, 0.36, 0.22)) return 'F';
+  if (back && ell(x, y, 0, 6.15, 0.22, 0.15)) return 'R';            // 뒷바퀴 반사판
+  if (ax <= 0.16 && y >= 5.4 && y < 7.3) return 'B';
+  if (ell(x, y, 0, 8.45, 0.3, 1.2)) return 'K';
+  return null;
+}
 // 말풍선(픽셀 그림 그대로. 어느 해상도에서나 같은 격자)
 // 말풍선 안 그림 3×4. 풍선은 사람 폭(2 px)의 1.25배 = 5칸.
 const BUBBLE_ICONS = {
@@ -300,10 +347,12 @@ const SCARF_COL = ['#c8322f', '#e8e4da', '#2f5f4f', '#d8a628', '#5a5f78'], COAT_
 const PACK_COL = ['#d6453a', '#2f8f6b', '#2b2b33', '#e58a2e'];
 const UMB_COL = ['#dfe9ee', '#f2cf4a', '#d6453a', '#27365c', '#2b2b33', '#3f9a63', '#dfe9ee', '#7fb7e0'], PARASOL_COL = ['#f4f1ea', '#f6dfe6', '#dfeaf2'];
 const FLAG_COL = ['#ffd23f', '#ff7a3d'];
+const BIKE_COL = ['#3fae49', '#d6453a', '#2b2b33', '#f1ede4', '#2f5fa8', '#e5b62e'], HELMET_COL = ['#f1ede4', '#d6453a', '#2b2b33', '#2f8fd6'];
 const MAT_COL = [['#e24a4a', '#f4efe6'], ['#3f78c8', '#f4efe6'], ['#3f9a63', '#f2e08a']], KITE_COL = [['#e24a4a', '#f2cf4a'], ['#3f78c8', '#f4efe6'], ['#7a3fa0', '#f2cf4a']];
 
 // ── 칸 목록. scene._cast(addCast) 가 있어야 한다(앉은 자세를 굽는 팔레트 목록).
-export function buildCast(scene) {
+// o.city = 도시 지도(여의도): 자전거·낚싯대·커피 칸을 더한다(경복궁 아틀라스는 그대로).
+export function buildCast(scene, o = {}) {
   if (scene._castReg) return scene._castReg;
   const cast = addCast(scene), pal = scene.walker_palette;
   const cells = [];
@@ -374,6 +423,24 @@ export function buildCast(scene) {
   reg.snowman = cell([-2, 5, 2, 10], G.snowman, { W: [244, 246, 250], K: [40, 40, 48], A: [236, 130, 40], B: [200, 60, 60], T: [96, 70, 50] }, { min: 2 });
   reg.mat = MAT_COL.map((p) => cell([-5, 6, 5, 9], G.mat, { A: rgb(p[0]), B: rgb(p[1]) }, { flat: true }));
   reg.kite = KITE_COL.map((p) => cell([-2, 0, 2, 7], G.kite, { A: rgb(p[0]), B: rgb(p[1]) }, { flat: true, min: 2 }));
+  if (o.city) {
+    reg.city = true;
+    reg.rod = [cell([1, -1, 7, 8], O.rod, { K: [58, 52, 48], W: [226, 228, 232], S: SKIN[0] }, { min: 1 }), cell([-7, -1, -1, 8], mir(O.rod), { K: [58, 52, 48], W: [226, 228, 232], S: SKIN[0] }, { min: 1 })];
+    reg.mat = MAT_COL.map((p) => cell([-7, 5, 7, 10], G.matBig, { A: rgb(p[0]), B: rgb(p[1]) }, { flat: true }));
+    reg.cup = cell([1, 3, 2, 5], O.cup, { A: [246, 244, 238], B: [150, 104, 64], W: [80, 60, 50] }, { min: 2 });
+    // 자전거: [차체 색][탄 사람][방향 0 오른쪽, 1 왼쪽, 2 다가옴, 3 멀어짐][페달 0, 1]. 차체 0 = 공공자전거(초록·흰)
+    const riders = riderPals(cast);
+    reg.bike = BIKE_COL.map((bc) => riders.map((pi, ri) => {
+      const ac = adultCol(pi), helmet = ri % 3 === 0 ? HELMET_COL[ri % HELMET_COL.length] : null;
+      const col = { ...ac, H: helmet ? rgb(helmet) : ac.H, p: mul(ac.P, 0.8), B: rgb(bc), K: [36, 36, 42], w: [190, 190, 196], R: [220, 50, 40] };
+      return [
+        [0, 1].map((f) => cell([-4, 0, 4, 10], (x, y) => bikeSide(x, y, f), col)),
+        [0, 1].map((f) => cell([-4, 0, 4, 10], (x, y) => bikeSide(-x, y, f), col)),
+        [0, 1].map((f) => cell([-2, 0, 2, 10], (x, y) => bikeFront(x, y, f, false), col)),
+        [0, 1].map((f) => cell([-2, 0, 2, 10], (x, y) => bikeFront(x, y, f, true), col)),
+      ];
+    }));
+  }
   reg.bubble = {};
   for (const k of Object.keys(BUBBLE_ICONS)) reg.bubble[k] = cell([0, 0, 5, 7], bubblePart(BUBBLE_ICONS[k]), { k: [26, 22, 32], W: [255, 255, 252], I: BUBBLE_COL[k] }, { flat: true, bitmap: true });
   for (const k of Object.keys(reg.bubble)) reg.bubble[k].bitmap = true;
@@ -425,10 +492,11 @@ export function extendPeopleAtlas(img, reg) {
   return out;
 }
 // 깊은 단계 아틀라스(hisprites.js 제너레이터)를 감싸, 다 만들어진 그림 아래에 칸을 그 해상도로 덧붙인다 → 결과에 cast[i] = [x, y].
-export function* withCastHi(gen, reg, SS) {
+export function* withCastHi(gen, reg, SS, ps = 1) {
   let r;
   while (!(r = gen.next()).done) yield;
-  const a = r.value, k = SS / 2, W = a.img.width, H0 = a.img.height;
+  // 1 m/px 지도(ps 0.5)는 칸이 절반 크기(hisprites 사람과 같은 배율)
+  const a = r.value, k = Math.max(1, Math.round(SS / 2 * (ps || 1))), W = a.img.width, H0 = a.img.height;
   const { pos, H } = pack(reg.cells, k, W, H0);
   const img = new ImageData(W, H);
   img.data.set(a.img.data);
@@ -450,16 +518,18 @@ export function createCastDraw(scene, proj) {
   const kH = proj.ey[2] / proj.m, kD = proj.m * proj.ey[2] / proj.vd[2];   // 높이 1 m 당 화면 px, 화면 한 줄 아래로 갈 때 지면 깊이 변화(음수)
   const ex = proj.ex;
   const UX = proj.vd[0] / proj.vd[2], UY = proj.vd[1] / proj.vd[2];   // 단 위 사람(zp): 지면 점과 같은 픽셀, 그 면의 깊이로 그린다
-  let R = null, hi = null, q = 2, KP = 1, KF = 1, o = null, sys = null, v0 = 0, v1 = 0, v2 = 0, v3 = 0, bubbles = true, drawn = 0;
+  // K = 지도 px 당 크기 배율: 0.5 m/px 지도(경복궁) 1, 1 m/px 지도(여의도) 0.5. 몸 좌표·px 로 정한 치수에 모두 곱한다(K = 1 이면 그대로).
+  const K = proj.ps || 1;
+  let R = null, hi = null, q = 2 / K, KP = 1, KF = 1, o = null, sys = null, v0 = 0, v1 = 0, v2 = 0, v3 = 0, bubbles = true, drawn = 0;
   const bubAt = [];
   const src = (c) => (hi ? hi.cast[c.i] : c.lo);
   // 칸 하나: (X, Y) = 발 자리(지도 px, 격자에 맞춘 값). kind 1 은 줄별 깊이(발 행 = param)
-  const put = (c, X, Y, dep, lift = 0) => { const s = src(c); R.sprite(X + c.box[0] / 2, Y - 4 + c.box[1] / 2 - lift, c.w / 2, c.h / 2, s[0], s[1], dep, KP, (8 - c.box[1]) / 2); };
+  const put = (c, X, Y, dep, lift = 0) => { const s = src(c); R.sprite(X + c.box[0] / 2 * K, Y - 4 * K + c.box[1] / 2 * K - lift, c.w / 2 * K, c.h / 2 * K, s[0], s[1], dep, KP, (8 - c.box[1]) / 2 * K); };
   // 색 그대로·평면 깊이(말풍선·돗자리·연). 깊은 단계는 kind 9, 기본 단계는 KF(render.js 에 평면 kind 가 생기기 전에는 kind 1, 발 행 0 = 평면)
   const flat = (c, x, y, w, h, sy, dep) => { const s = src(c); R.sprite(x, y, w, h, s[0], s[1] + sy, dep, hi ? 9 : KF, 0); };
   const base = (pal, frame, X, Y, dep, lift) => {
-    if (hi) { const c = hi.people[pal][frame]; R.sprite(X - 1, Y - 4 - lift, 2, 4.5, c[0], c[1], dep, 10, 4); }
-    else R.sprite(X - 1, Y - 4 - lift, 2, 4.5, (pal % PERSON.perRow) * PERSON.cellW * 4 + frame * PERSON.cellW, Math.floor(pal / PERSON.perRow) * PERSON.cellH, dep, 1, 4);
+    if (hi) { const c = hi.people[pal][frame]; R.sprite(X - 1 * K, Y - 4 * K - lift, 2 * K, 4.5 * K, c[0], c[1], dep, 10, 4 * K); }
+    else R.sprite(X - 1 * K, Y - 4 * K - lift, 2 * K, 4.5 * K, (pal % PERSON.perRow) * PERSON.cellW * 4 + frame * PERSON.cellW, Math.floor(pal / PERSON.perRow) * PERSON.cellH, dep, 1, 4 * K);
   };
   const POSE = { stand: 0, walk: 1, wave: 2, cheer: 3, cam: 4, point: 5, sit: 6, kneel: 7, run: 8 };
   // 사람 하나. L = { fam, pal, hat, bag, cane, h }(people.js 가 정한 겉모습), 나머지는 이번 프레임 상태.
@@ -468,7 +538,7 @@ export function createCastDraw(scene, proj) {
     if (S[0] < v0 || S[0] > v2 || S[1] < v1 || S[1] > v3) return;
     drawn++;
     const X = Math.round(S[0] * q) / q, Y = Math.round(S[1] * q) / q, dep = S[2];
-    const lift = hop > 0 ? Math.round(Math.abs(Math.sin(hop * 9)) * 1.2 * q) / q : 0;
+    const lift = hop > 0 ? Math.round(Math.abs(Math.sin(hop * 9)) * 1.2 * K * q) / q : 0;
     const fam = L.fam, p = POSE[pose] || 0, moving = p === 1 || p === 8;
     let top = 0, od = dep - 0.02;                                   // top = 머리 위로 더 올라간 높이(말풍선 자리, 몸 좌표)
     let adultLike = false;
@@ -486,7 +556,7 @@ export function createCastDraw(scene, proj) {
     else if (fam === 'dog' || fam === 'cat') { put((fam === 'dog' ? reg.dog : reg.cat)[L.pal][p === 6 ? 2 : moving ? Math.floor(dist / 0.3) & 1 : 0][face > 0 ? 0 : 1], X, Y, dep, lift); top = -6; }
     else if (fam === 'wheel') { put(reg.wheel[L.pal][face > 0 ? 0 : 1], X, Y, dep, 0); top = -2.3; }
     else if (fam === 'stroller') { put(reg.stroller[L.pal][face > 0 ? 0 : 1], X, Y, dep, 0); top = -5; }
-    R.shadow(X - (fam === 'dog' || fam === 'stroller' || fam === 'wheel' ? 1.25 : 1), Y, fam === 'cat' ? 1.5 : 2.5, 0.5, 0, 0, dep, 3);
+    R.shadow(X - (fam === 'dog' || fam === 'stroller' || fam === 'wheel' ? 1.25 : 1) * K, Y, (fam === 'cat' ? 1.5 : 2.5) * K, 0.5 * K, 0, 0, dep, 3);
     if (adultLike) {
       const h = L.h, winter = o.season === 3, sk = fam === 'a' ? L.pal % 4 : 0;
       if (fam === 'a') {
@@ -496,6 +566,7 @@ export function createCastDraw(scene, proj) {
         if (winter && fr(h * 7) < 0.5) { put(reg.scarf[Math.floor(h * 53) % reg.scarf.length], X, Y, od, lift); od -= 0.02; }
         if (L.hat) { put(reg.hats[L.hat - 1], X, Y, od, lift); od -= 0.02; } else if (winter && fr(h * 13) < 0.3) { put(reg.beanie[Math.floor(h * 71) % reg.beanie.length], X, Y, od, lift); od -= 0.02; top = 1; }
         if (L.cane) { put(L.cane === 2 ? reg.broom : reg.cane, X, Y, od, lift); od -= 0.02; }
+        if (L.cup && reg.cup && p !== 4 && p !== 2 && p !== 3 && !o.rain) { put(reg.cup, X, Y, od, lift); od -= 0.02; }
       } else if (fam !== 'g' && winter) {
         if (fr(h * 7) < 0.6) { put(reg.vest[Math.floor(h * 53) % reg.vest.length], X, Y, od, lift); od -= 0.02; }
         if (fr(h * 11) < 0.45) { put(reg.scarf[Math.floor(h * 31) % reg.scarf.length], X, Y, od, lift); od -= 0.02; }
@@ -509,7 +580,7 @@ export function createCastDraw(scene, proj) {
       } else if (p === 4) { put(reg.cam[sk], X, Y, od, lift); od -= 0.02; }
       else if (p === 5) { put(reg.point[sk][face > 0 ? 1 : 0], X, Y, od, lift); od -= 0.02; }
       if (prop) {
-        const c = prop === 'flag' ? reg.flag[L.pal & 1] : prop === 'spear' ? reg.spear : prop === 'banner' ? reg.banner : prop === 'guitar' ? reg.guitar : null;
+        const c = prop === 'flag' ? reg.flag[L.pal & 1] : prop === 'spear' ? reg.spear : prop === 'banner' ? reg.banner : prop === 'guitar' ? reg.guitar : prop === 'rod' && reg.rod ? reg.rod[face > 0 ? 0 : 1] : null;
         if (c) { put(c, X, Y, od, lift); od -= 0.02; if (prop !== 'guitar') top = Math.max(top, 2); }
       }
       // 우산(비)·양산(여름 한낮). 사진 찍는 자세·수문장은 들지 않는다.
@@ -518,20 +589,23 @@ export function createCastDraw(scene, proj) {
         else if (o.parasol && fr(h * 5.3) < (fam === 'a' ? 0.07 : 0.2)) { put(reg.parasol[Math.floor(h * 89) % reg.parasol.length], X, Y, od - 0.02, lift); top = 2.2; }
       }
     }
+    // 앉아서 낚시: 낚싯대 칸은 선 사람 손 높이로 그렸으므로 앉은 손 높이(3.2 칸 아래)로 내린다
+    if (prop === 'rod' && !adultLike && reg.rod) put(reg.rod[face > 0 ? 0 : 1], X, Y, od, lift - 1.6 * K);
     // 바로 옆 사람과 말풍선이 겹치면 먼저 그린 쪽만 남긴다
-    if (bubble && bubbles && reg.bubble[bubble] && !sys.hidden(x, y) && !bubAt.some((b, i) => !(i & 1) && Math.abs(b - X) < 3 && Math.abs(bubAt[i + 1] - Y) < 4)) {
+    if (bubble && bubbles && reg.bubble[bubble] && !sys.hidden(x, y) && !bubAt.some((b, i) => !(i & 1) && Math.abs(b - X) < 3 * K && Math.abs(bubAt[i + 1] - Y) < 4 * K)) {
       bubAt.push(X, Y);
-      flat(reg.bubble[bubble], X - 1.25, Y - 4 - (top + 7.4) / 2 - lift, 2.5, 3.5, 0, dep - 4);
+      flat(reg.bubble[bubble], X - 1.25 * K, Y - (4 + (top + 7.4) / 2) * K - lift, 2.5 * K, 3.5 * K, 0, dep - 4);
     }
   }
   // 땅에 깔린 것(돗자리): 0.5 px 띠로 나눠 띠마다 지면 깊이를 준다 → 그 위에 앉은 사람이 가려지지 않는다
-  const decal = (c, x, y) => {
-    proj.project(x, y, 0, S);
+  //   zg = 그 자리 땅 높이(도시 지도: 굽기에서 잔디가 z 0 보다 높다). K < 1 이면 띠 깊이를 깊이 그림 픽셀(1 px) 중심에 맞춘다.
+  const decal = (c, x, y, zg = 0) => {
+    proj.project(x, y, zg, S);
     if (S[0] < v0 || S[0] > v2 || S[1] < v1 || S[1] > v3) return;
-    const X = Math.round(S[0] * q) / q, Y = Math.round(S[1] * q) / q, ty = Y - 4 + c.box[1] / 2;
-    for (let r = 0; r < c.h / 2; r += 0.5) flat(c, X + c.box[0] / 2, ty + r, c.w / 2, 0.5, r * q, S[2] + (ty + r + 0.5 - S[1]) * kD + 0.1);
+    const X = Math.round(S[0] * q) / q, Y = Math.round(S[1] * q) / q, ty = Y + (-4 + c.box[1] / 2) * K;
+    for (let r = 0; r < c.h / 2 * K; r += 0.5 * K) flat(c, X + c.box[0] / 2 * K, ty + r, c.w / 2 * K, 0.5 * K, r * q, S[2] + ((K < 1 ? Math.floor(ty + r) + 0.5 : ty + r + 0.5) - S[1]) * kD + 0.1);
   };
-  const dot = (x, y, z, col, size = 0.5) => { proj.project(x, y, z, S); R.sprite(Math.round(S[0] * q) / q, Math.round(S[1] * q) / q, size, size, 0, 0, S[2] - 0.5, 6, col); };
+  const dot = (x, y, z, col, size = 0.5) => { proj.project(x, y, z, S); R.sprite(Math.round(S[0] * q) / q, Math.round(S[1] * q) / q, size * K, size * K, 0, 0, S[2] - 0.5, 6, col); };
 
   const LOOK_STAND = { fam: 'a', pal: 0, hat: 0, bag: 0, cane: 0, h: 0 };
   return {
@@ -576,8 +650,24 @@ export function createCastDraw(scene, proj) {
         proj.project(P[0], P[1], 0, S);
         if (S[0] < v0 - 12 || S[0] > v2 + 12 || S[1] < v1 - 12 || S[1] > v3 + 12) continue;
         const d0 = r.ou + (r.u - r.ou) * al;
-        fig(P[0], P[1], 0, r.look, 'run', d0, face, (Math.floor(d0 / 0.62) & 1) ? 0.024 : 0, null, 0, t);
-        for (const f of r.fol) { const fc = sys.rpos(r, al, Q, f.dd), d1 = d0 + f.dd + 40; fig(Q[0], Q[1], 0, f.look, 'run', d1, fc, (Math.floor(d1 / 0.62) & 1) ? 0.024 : 0, null, 0, t); }
+        let zr = sys.city ? zs(P[0], P[1]) : 0;   // 도시 지도: 그 자리 땅 높이(같은 픽셀)
+        fig(P[0] + zr * UX, P[1] + zr * UY, zr, r.look, 'run', d0, face, (Math.floor(d0 / 0.62) & 1) ? 0.024 : 0, null, 0, t);
+        for (const f of r.fol) { const fc = sys.rpos(r, al, Q, f.dd), d1 = d0 + f.dd + 40; zr = sys.city ? zs(Q[0], Q[1]) : 0; fig(Q[0] + zr * UX, Q[1] + zr * UY, zr, f.look, 'run', d1, fc, (Math.floor(d1 / 0.62) & 1) ? 0.024 : 0, null, 0, t); }
+      }
+      // 자전거(도시 지도): 방향에 맞는 칸, 페달은 1.1 m 마다 바뀐다. 그림자는 바퀴 사이 길게.
+      if (sys.bikes && reg.bike) for (const b of sys.bikes) {
+        if (!b.vis) continue;
+        const d0 = b.ou + (b.u - b.ou) * al;
+        for (let j = -1; j < b.fol.length; j++) {
+          const L = j < 0 ? b.look : b.fol[j].look, dir = sys.bpos(b, al, P, j < 0 ? 0 : b.fol[j].dd), zb = zs(P[0], P[1]);
+          proj.project(P[0] + zb * UX, P[1] + zb * UY, zb, S);
+          if (S[0] < v0 - 4 || S[0] > v2 + 4 || S[1] < v1 - 4 || S[1] > v3 + 6) { if (j < 0 && (S[0] < v0 - 40 || S[0] > v2 + 40 || S[1] < v1 - 40 || S[1] > v3 + 40)) break; continue; }
+          drawn++;
+          const X = Math.round(S[0] * q) / q, Y = Math.round(S[1] * q) / q, c = reg.bike[L.frame][L.pal][dir][Math.floor((d0 + (j < 0 ? 0 : b.fol[j].dd)) / 1.1) & 1];
+          put(c, X, Y, S[2]);
+          if (dir < 2) R.shadow(X - 2 * K, Y, 4 * K, 0.5 * K, 0, 0, S[2], 3); else R.shadow(X - 0.75 * K, Y, 1.5 * K, 0.75 * K, 0, 0, S[2], 3);
+          if (opt.day < 0.45 && dir !== 3) R.light(S[0] + (dir === 0 ? 1.1 : dir === 1 ? -1.1 : 0) * K, S[1] - 1.4 * K, 4, 0.9, 0.9, 0.75);   // 반경은 렌더러가 지도 배율을 곱한다
+        }
       }
       for (const p of sys.props) {
         if (p.sc && !p.sc.on) continue;
@@ -586,22 +676,23 @@ export function createCastDraw(scene, proj) {
           proj.project(p.x + zp * UX, p.y + zp * UY, zp, S);
           if (S[0] < v0 - 6 || S[0] > v2 + 6 || S[1] < v1 - 4 || S[1] > v3 + 10) continue;
           const hx = Math.round(S[0] * q) / q, hy = Math.round(S[1] * q) / q;
-          R.shadow(hx - 1.6, hy + 0.1, 6.5, 1.3, 0, 0, S[2], 3);
+          R.shadow(hx - 1.6 * K, hy + 0.1 * K, 6.5 * K, 1.3 * K, 0, 0, S[2], 3);
           put(reg.haechi, hx, hy, S[2]);
           if (opt.day < 0.5) R.light(S[0], S[1] - 2.5, 9, 0.55, 0.5, 0.4);   // 밤에는 옅은 조명
           continue;
         }
-        if (p.type === 'mat') decal(reg.mat[p.variant], p.x, p.y);
+        const zg = p.zg || 0;   // 도시 지도: 소품이 놓인 땅 높이(같은 픽셀, 그 면 깊이)
+        if (p.type === 'mat') decal(reg.mat[p.variant], p.x + zg * UX, p.y + zg * UY, zg);
         else if (p.type === 'kite') {
           const alt = 9 + 1.2 * Math.sin(t * 0.7 + p.ph), sway = 2.2 * Math.sin(t * 0.45 + p.ph * 2);
           proj.project(p.x + 3 + sway, p.y + 3, 0, S);
           if (S[0] < v0 || S[0] > v2 || S[1] - alt * kH < v1 - 20 || S[1] > v3 + 30) continue;
           const c = reg.kite[p.variant], kx = Math.round(S[0] * q) / q, ky = Math.round((S[1] - alt * kH) * q) / q;
-          flat(c, kx - 1, ky, c.w / 2, c.h / 2, 0, S[2] - 12);
+          flat(c, kx - 1 * K, ky, c.w / 2 * K, c.h / 2 * K, 0, S[2] - 12);
           proj.project(p.x, p.y, 0, Q);
-          for (let k = 1; k <= 7; k++) { const u = k / 8, sag = Math.sin(u * Math.PI) * 1.5; R.sprite(Math.round((Q[0] + 0.6 + (kx - Q[0] - 0.6) * u) * q) / q, Math.round((Q[1] - 3.4 + (ky + 2 - Q[1] + 3.4) * u + sag) * q) / q, 0.25, 0.25, 0, 0, S[2] - 12, 6, 1); }
+          for (let k = 1; k <= 7; k++) { const u = k / 8, sag = Math.sin(u * Math.PI) * 1.5 * K; R.sprite(Math.round((Q[0] + 0.6 * K + (kx - Q[0] - 0.6 * K) * u) * q) / q, Math.round((Q[1] - 3.4 * K + (ky + 2 * K - Q[1] + 3.4 * K) * u + sag) * q) / q, 0.25 * K, 0.25 * K, 0, 0, S[2] - 12, 6, 1); }
         } else {
-          proj.project(p.x, p.y, 0, S);
+          proj.project(p.x + zg * UX, p.y + zg * UY, zg, S);
           if (S[0] < v0 || S[0] > v2 || S[1] < v1 || S[1] > v3) continue;
           put(p.type === 'snowman' ? reg.snowman : reg.bench, Math.round(S[0] * q) / q, Math.round(S[1] * q) / q, S[2] + (p.type === 'bench' ? 0.25 : 0));
         }
@@ -610,16 +701,17 @@ export function createCastDraw(scene, proj) {
         const u = f.t / f.T;
         if (f.type === 'flash') {
           proj.project(f.x, f.y, f.z, S);
-          R.sprite(Math.round(S[0] * q) / q - 0.25, Math.round(S[1] * q) / q - 0.25, 0.75, 0.75, 0, 0, S[2] - 1, 4, 0);
+          R.sprite(Math.round(S[0] * q) / q - 0.25 * K, Math.round(S[1] * q) / q - 0.25 * K, 0.75 * K, 0.75 * K, 0, 0, S[2] - 1, 4, 0);
           if (opt.day < 0.6) R.light(S[0], S[1] + 2, 12, 0.9, 0.9, 0.8);
         } else if (f.type === 'ball') dot(f.x + (f.x1 - f.x) * u, f.y + (f.y1 - f.y) * u, f.z + Math.sin(u * Math.PI) * 0.9, 3);
+        else if (f.type === 'drop') dot(f.x, f.y, Math.sin(u * Math.PI) * f.h, u < 0.5 ? 3 : 2, 0.5);
         else if (f.type === 'soap') dot(f.x + Math.sin(f.ph + u * 5) * 0.4 + u * f.dx, f.y + u * f.dy, f.z + u * 2.6, u < 0.85 ? 2 : 5, 0.25 + 0.25 * (f.ph % 2 > 1));
       }
       // 걸어가는 사람 머리 위 말풍선(탭했는데 설 수 없는 자리)
       for (const fl of sys.floaters) {
         if (!bubbles) break;
         sys.wpos(fl.wi, t, P); proj.project(P[0], P[1], P[2], S);
-        flat(reg.bubble[fl.icon], Math.round(S[0] * q) / q - 1.25, Math.round(S[1] * q) / q - 7.4, 2.5, 3.5, 0, S[2] - 4);
+        flat(reg.bubble[fl.icon], Math.round(S[0] * q) / q - 1.25 * K, Math.round(S[1] * q) / q - 7.4 * K, 2.5 * K, 3.5 * K, 0, S[2] - 4);
       }
       return drawn;
     },

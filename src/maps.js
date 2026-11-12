@@ -52,7 +52,9 @@ export const MAPS = {
     firstView: { wide: [0.5, 0.5, 0.9], box: { at: ['parc1', 'park'], w: 850, h: 680 } },   // 세로 화면: 파크원과 여의도공원 사이를 가운데로
     busDemo: null,
     windows: 'grid',                             // 밤 창문을 층 × 칸으로(winlights.js). 없으면 경복궁 식(그림의 창 픽셀, 2 m 칸)
-    people: false, birds: false, finds: false, traffic: 'simple', cars: 700,
+    // 사람: profile 'city' = 경복궁 전용 장면(수문장·관람 시간·한복 비율) 대신 공원·강변·업무지구 장면(sim/people.js). 찾아보기는 아직 경복궁만.
+    people: true, profile: 'city', birds: false, finds: false, traffic: 'simple', cars: 2500,   // cars = 출퇴근 때 대수(낮 약 1900, 밤 약 900: simple-traffic demandAt)
+    parking: 900,                                 // 세워 둔 차 최대 대수(sim/parking.js, ?parked=0 이면 없음)
   },
 };
 export const DEFAULT_MAP = 'gyeongbok';

@@ -22,6 +22,13 @@ function parts(kind, color, L, Wd, Hh) {
     out.push([-hl * 0.5, hl * 0.2, -hw * 0.5, hw * 0.5, Hh, Hh + 0.25, [214, 216, 214], [150, 152, 150]]);
     return out;
   }
+  if (kind === 'truck') {
+    // 앞 1.7 m 운전칸(차체 색 + 유리), 뒤 짐칸 상자(밝은 회백)
+    out.push([hl - 1.7, hl, -hw, hw, 0.3, 1.45, c, c]);
+    out.push([hl - 1.55, hl - 0.1, -hw + 0.12, hw - 0.12, 1.45, 2.15, roof, GLASS]);
+    out.push([-hl, hl - 1.8, -hw, hw, 0.75, Hh, [226, 228, 226], [196, 198, 196]]);
+    return out;
+  }
   const hb = kind === 'van' ? Hh * 0.5 : kind === 'suv' ? Hh * 0.55 : Hh * 0.58;
   out.push([-hl, hl, -hw, hw, 0.3, hb, c, c]);
   const cab = kind === 'van' ? [-hl + 0.1, hl * 0.55] : kind === 'suv' ? [-hl + 0.25, hl * 0.35] : [-hl * 0.55, hl * 0.3];
