@@ -1,25 +1,26 @@
 # 테헤란로 지역 빌더. ../yeouido/gen_area.py 가 여의도 lm_build.py 다음에 exec 로 읽는다(같은 전역: MB, mat_flat, grid_tex, gtower, crystal, toonify, LMC, LMB, LMN …).
-# 랜드마크의 색·꼭대기 형태는 기억에 의존한 추정이다(사진 대조를 하지 않았다). 높이·윤곽은 OSM. 글자·로고는 넣지 않는다.
+# 높이·윤곽은 OSM. 색·입면 구성은 네이버 지도 거리뷰를 눈으로 보고 맞췄다(2026-11-12: 위워크타워, 트레이드타워, 아셈타워, 코엑스, 파르나스타워, 글라스타워, DB금융센터, 강남파이낸스센터, 포스코센터, GT타워, 센터필드, GS타워, 삼성 서초사옥).
+# 거리뷰에서 잘 안 보인 메리츠타워와 모든 옥상·꼭대기 형태는 추정이다. 사진은 저장소에 넣지 않았다. 글자·로고는 넣지 않는다.
 KBSF.clear(); LMC.clear(); LMB.clear(); LMN.clear()   # 여의도 전용 표(건물 순번·이름)를 비운다
 
 # ---------------- 격자 유리 타워 설정(gtower / crystal) ----------------
 LMC.update({
-    'wework': dict(glass='#6f8ea6', line='#4d6478', flh=4.0, bay=1.5, sp=.26, spc='#dfe3e4', lobby=7.0, kit=2),             # 위워크타워(테헤란로 427): 청회색 유리 + 밝은 층 띠
-    'trade': dict(glass='#6d93b6', line='#47637f', flh=4.1, bay=1.5, sp=.30, spc='#3f5873', lobby=9.0, kit=1),               # 트레이드타워: 푸른 반사 유리 + 짙은 층 띠. 계단꼴 윤곽은 OSM 파트 그대로
-    'asem': dict(glass='#5f8fbd', line='#3f6690', flh=4.1, bay=1.5, sp=.22, lobby=9.0, crownband=3.0, kit=3),
-    'parnas': dict(glass='#93a6b3', line='#66788a', flh=4.2, bay=1.2, sp=.12, lobby=10.0, kit=2),
-    'gfc': dict(glass='#577785', line='#3a5560', flh=4.3, bay=1.5, sp=.26, spc='#8b9ba0', lobby=10.0, crownband=4.0, kit=4),  # 강남파이낸스센터: 짙은 청록 유리
-    'db': dict(glass='#7fa9b8', line='#56808f', flh=4.2, rise=14, sdir=(0.4, 0.9), facets=[(0.8, 0.6, .35, 9.0), (-0.75, -0.66, .55, 7.0)]),   # DB금융센터: 접힌 유리 결정
+    'wework': dict(glass='#6fa0a8', line='#4a747c', flh=4.0, bay=1.5, sp=.16),                                              # 위워크타워(테헤란로 427): 석재 저층부 + 청록 유리 타워(아래 wework())
+    'trade': dict(glass='#64798f', line='#3c4b5c', flh=4.1, bay=1.2, sp=.20, spc='#44566a', lobby=9.0, kit=1),               # 트레이드타워: 회청색 반사 유리, 세로 결. 계단꼴 윤곽은 OSM 파트 그대로
+    'asem': dict(glass='#6c8197', line='#44586c', flh=4.1, bay=1.5, sp=.36, spc='#aeb8c1', lobby=9.0, crownband=3.0, kit=3),  # 아셈타워: 청회색 유리 + 밝은 가로 띠
+    'parnas': dict(glass='#6d7f90', line='#44535f', flh=4.2, bay=1.5, sp=.20, spc='#9ba8b3', lobby=10.0, kit=2),             # 파르나스타워: 짙은 청회색 유리
+    'gfc': dict(glass='#5d8fbf', line='#3d6791', flh=4.3, bay=1.5, sp=.16, lobby=10.0, crownband=4.0, kit=4),                # 강남파이낸스센터: 맑은 파란 유리 커튼월
+    'db': dict(glass='#5c7389', line='#3b4e60', flh=4.2, rise=14, sdir=(0.4, 0.9), facets=[(0.8, 0.6, .35, 9.0), (-0.75, -0.66, .55, 7.0)]),   # DB금융센터: 짙은 청회색 유리, 접힌 면(면의 방향·깊이는 추정)
     'posco_e': dict(glass='#6fa4a6', line='#4a7b7e', flh=4.1, bay=1.5, sp=.30, spc='#cfd6d6', lobby=9.0, kit=3),             # 포스코센터: 청록 유리 + 은색 띠(두 동)
     'posco_w': dict(glass='#6fa4a6', line='#4a7b7e', flh=4.1, bay=1.5, sp=.30, spc='#cfd6d6', lobby=9.0, kit=3),
-    'samsung_e': dict(glass='#7f9db6', line='#58758e', flh=4.2, bay=1.5, sp=.34, spc='#e0e4e6', lobby=10.0, kit=4),          # 삼성 서초사옥 세 동: 푸른 유리 + 흰 가로 띠
-    'samsung_c': dict(glass='#7f9db6', line='#58758e', flh=4.2, bay=1.5, sp=.34, spc='#e0e4e6', lobby=10.0, kit=3),
-    'samsung_l': dict(glass='#7f9db6', line='#58758e', flh=4.2, bay=1.5, sp=.34, spc='#e0e4e6', lobby=10.0, kit=2),
-    'cf_e': dict(glass='#7c97ac', line='#566f84', flh=4.3, bay=1.5, sp=.18, lobby=10.0, kit=3),                               # 센터필드 두 동
-    'cf_w': dict(glass='#7c97ac', line='#566f84', flh=4.3, bay=1.5, sp=.18, lobby=10.0, kit=3),
-    'gs': dict(glass='#9fb2be', line='#73858f', flh=4.2, bay=1.5, sp=.40, spc='#d6dbde', lobby=10.0, crownband=3.0, kit=3),  # GS타워: 스테인리스 띠
+    'samsung_e': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=4),          # 삼성 서초사옥 세 동: 밝은 하늘빛 유리 + 흰 가로 띠
+    'samsung_c': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=3),
+    'samsung_l': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=2),
+    'cf_e': dict(glass='#5d7186', line='#2f3b47', flh=4.3, bay=1.0, sp=.10, lobby=10.0, kit=3),                               # 센터필드 두 동: 짙은 청회색 유리, 촘촘한 세로 멀리언
+    'cf_w': dict(glass='#5d7186', line='#2f3b47', flh=4.3, bay=1.0, sp=.10, lobby=10.0, kit=3),
+    'gs': dict(glass='#4b5661', line='#2c343c', flh=4.2, bay=1.5, sp=.20, spc='#98a1a8', lobby=10.0, crownband=3.0, kit=3),  # GS타워: 짙은 회색 반사 유리 + 금속 띠
     'meritz': dict(glass='#6f8fae', line='#4d6b88', flh=4.2, bay=1.5, sp=.20, lobby=9.0, kit=2),
-    'glass': dict(glass='#44627e', line='#2f465c', flh=3.7, bay=1.5, sp=.16, lobby=8.0, kit=2),                              # 글라스타워: 짙은 청색 유리
+    'glass': dict(glass='#768a9b', line='#4d5f6e', flh=3.7, bay=1.5, sp=.30, spc='#aab3ba', lobby=8.0, kit=2),               # 글라스타워: 둥근 평면의 회청색 유리 + 가로 띠
     'gt': dict(glass='#6f9cc0', line='#4c7396', flh=4.4, bay=1.6, sp=.14, spc='#e9eef0'),                                    # GT타워: 물결치는 유리면
     'coex': dict(),
 })
@@ -42,9 +43,9 @@ def gt_wave(b, idx, cfg):
     toonify(mb.build('gt%d' % idx, idx))
 
 def coex(b, idx, cfg):
-    """코엑스 전시장: 넓고 낮은 유리·금속 상자, 밝은 지붕에 긴 천창 띠(지붕 형태는 단순화, 높이 28 m 는 추정)."""
+    """코엑스 전시장(거리뷰: 파란 반사 유리 벽): 넓고 낮은 유리 상자, 밝은 지붕에 긴 천창 띠(지붕 형태는 단순화, 높이 28 m 는 추정)."""
     poly = orient(P(b['rings']), 1.0); h = 28.0; mb = MB()
-    path, tw, th = grid_tex('coex', '#8fa6b4', '#5f7684', 3.0, 7.0, sp=.25, spc='#d9dcdc'); skin(mb, poly, 0.0, lambda x, y: h, mat_tex(path, 'gcoex'), tw, th)
+    path, tw, th = grid_tex('coex', '#5a86c2', '#3c5f96', 3.0, 7.0, sp=.18, spc='#c9d3dc'); skin(mb, poly, 0.0, lambda x, y: h, mat_tex(path, 'gcoex'), tw, th)
     flat_roof(mb, poly, h, '#d9dcdc', '#c2c5c6'); c, ax_, Lx, Ly, _ = mrr_axes(poly); nv = np.array([-ax_[1], ax_[0]]); inn = poly.buffer(-8.0)
     for k in range(-3, 4):   # 천창 띠
         q = Polygon([tuple(c + ax_ * su * Lx * .42 + nv * (k * Ly * .12 + sv * 3.2)) for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]).intersection(inn)
@@ -53,7 +54,36 @@ def coex(b, idx, cfg):
     roof_kit(mb, poly, h, random.Random(11), 10)
     toonify(mb.build('b%d' % idx, idx))
 
-LMB.update({k: gtower for k in LMC}); LMB.update(db=crystal, gt=gt_wave, coex=coex)
+def wework(b, idx, cfg):
+    """위워크타워(네이버 거리뷰 대조, 2026-07 촬영분): 두 층 높이 회색 화강석 기단, 그 위 분홍빛 베이지 석재 저층부(층마다 네모난 녹색 유리 창 묶음), 저층부 위로 조금 물러난 타워.
+    타워는 베이지 석재 띠와 파란 유리 띠가 층마다 번갈아 있고, 테헤란로 쪽 면 가운데에 세로 유리 줄이 꼭대기까지 오르며, 맨 위 네 층은 전면 유리다.
+    그 꼭대기 가운데에 짙은 띠 + 흰 'wework' 간판이 달려 있다(사용자 요청으로 이 건물만 글자를 넣었다. 그림에서 읽히도록 실제보다 크게 과장).
+    저층부 높이(전체의 약 40 %)·물러난 폭 2.2 m·간판 크기는 사진 비례로 잡은 추정."""
+    poly = orient(P(b['rings']), 1.0); H = b['h']; hb, hp, hg = 8.4, round(H * .40 / 4.0) * 4.0 + .4, H - 16.0; mb = MB()
+    skin(mb, poly, 0.0, lambda x, y: hb, mat_flat('#8e8a8c'), 1, 1)
+    path, tw, th = finwall_tex('wework', '#d8c3b0', '#4f7f78', '#d8c3b0', bay=5.0, flh=4.0, finw=1.3); skin(mb, poly, hb, lambda x, y: hp, mat_tex(path, 'fin_' + path), tw, th)
+    up = poly.buffer(-2.2, join_style=2); up = orient(up, 1.0) if up.geom_type == 'Polygon' and up.area > 120 else poly
+    flat_roof(mb, poly, hp, '#d8c3b0', '#a9a69d')
+    k1 = f"wwb_{cfg['glass']}"; gp, gw, gh = grid_tex(k1, cfg['glass'], cfg['line'], cfg['bay'], cfg['flh'], sp=.42, spc='#d9cbb8'); skin(mb, up, hp, lambda x, y: hg, mat_tex(gp, 'g' + k1), gw, gh)
+    k2 = f"wwt_{cfg['glass']}"; gp, gw, gh = grid_tex(k2, cfg['glass'], cfg['line'], cfg['bay'], cfg['flh'], sp=.06); skin(mb, up, hg, lambda x, y: H, mat_tex(gp, 'g' + k2), gw, gh)
+    capf(mb, up, lambda x, y: H, mat_flat('#9a9c9e')); _parapet(mb, up, H, shade(cfg['glass'], .8)); roof_kit(mb, up, H, random.Random(b['seed']), 2)
+    c, ax_, Lx, Ly, _ = mrr_axes(up); nv = np.array([-ax_[1], ax_[0]])   # 테헤란로 쪽 면 찾기
+    rd = [LineString(r['pts']) for r in S['roads'] if r['name'] == '테헤란로']; near = min(rd, key=lambda l: l.distance(Point(*c))); q = near.interpolate(near.project(Point(*c)))
+    f = np.array([q.x, q.y]) - c; fd, half, wide = max(((ax_, Lx / 2, Ly / 2), (-ax_, Lx / 2, Ly / 2), (nv, Ly / 2, Lx / 2), (-nv, Ly / 2, Lx / 2)), key=lambda t: float(t[0] @ f))
+    side = np.array([-fd[1], fd[0]]); fc = c + fd * (half - .4)
+    obox(mb, fc, fd, 1.0, wide * .40, hp, H + .9, mat_flat(shade(cfg['glass'], .92)), mat_flat('#8d9296'))                              # 가운데 세로 유리 줄(0.6 m 돌출)
+    for sv in (-1, 0, 1): obox(mb, fc + side * sv * wide * .40, fd, 1.08, .3, hp, H + .9, mat_flat('#34444f'))                           # 짙은 세로 기둥선
+    sp_ = f'{TEXD}/wework_sign.png'
+    if not os.path.exists(sp_):
+        from PIL import ImageFont
+        im = Image.new('RGB', (640, 150), '#27323b'); d = ImageDraw.Draw(im)
+        try: fnt = ImageFont.truetype('/System/Library/Fonts/Supplemental/Georgia Bold.ttf', 128)
+        except OSError: fnt = ImageFont.load_default(size=120)
+        x0_, y0_, x1_, y1_ = d.textbbox((0, 0), 'wework', font=fnt); d.text(((640 - (x1_ - x0_)) / 2 - x0_, (150 - (y1_ - y0_)) / 2 - y0_), 'wework', font=fnt, fill='#ffffff'); im.save(sp_)
+    sw, z0_, z1_ = wide * .80, H - 3.6, H + .9; p0, p1 = c + fd * (half + .72) - side * sw, c + fd * (half + .72) + side * sw
+    mb.face([(*p0, z0_), (*p1, z0_), (*p1, z1_), (*p0, z1_)], mat_tex(sp_, 'wework_sign'), [(0, 0), (1, 0), (1, 1), (0, 1)])
+    toonify(mb.build('b%d' % idx, idx))
+LMB.update({k: gtower for k in LMC}); LMB.update(db=crystal, gt=gt_wave, coex=coex, wework=wework)
 
 # ---------------- 기와지붕 전각(정자각·비각·재실, 봉은사 전각) ----------------
 def tileroof(b, idx, wall='palace', roofc='#4d5258'):
@@ -141,13 +171,13 @@ for _k, g_ in enumerate(S.get('gates', [])):   # 홍살문: 붉은 두 기둥 + 
 SITEK = {'현대자동차 글로벌비즈니스센터': 'gbc', '영동대로복합환승센터': 'gtx'}
 PITZ = -1.8   # 굴착 바닥 = gen_area 의 물 바닥 높이(지면 판이 이 높이에 깔려 있다). 실제 깊이(수십 m)는 버팀보로만 암시한다
 CONC, CONC2, RUST, YEL = '#b9b6ad', '#cfccc3', '#9a5a3c', '#e9b52e'
-def tcrane(mb, p, H, ang, jib=44.0, cj=13.0, col=YEL):
+def tcrane(mb, p, H, ang, jib=44.0, cj=13.0, col=YEL, z0=0.0):
     """타워크레인: 격자 마스트 + 수평 지브 + 평형추. 부재는 그림에서 보이게 굵게 과장했다."""
     m, dk = mat_flat(col), mat_flat(shade(col, .72)); x, y = p; s = 1.0; d = np.array([math.cos(ang), math.sin(ang)]); nv = np.array([-d[1], d[0]])
-    mb.box((x, y, 0), 2.2, 2.2, .7, mat_flat('#9a9a94'))
-    for k in range(int(H // 3)):
-        z0, z1 = k * 3.0, k * 3.0 + 3.0; cs = [(x + sx * s, y + sy * s) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-        for j in range(4): beam(mb, (*cs[j], z0), (*cs[j], z1), .3, m); beam(mb, (*cs[j], z0), (*cs[(j + 1) % 4], z1), .16, m)
+    mb.box((x, y, z0), 2.2, 2.2, .7, mat_flat('#9a9a94'))
+    for k in range(int(z0 // 3), int(H // 3)):
+        za_, z1 = max(z0, k * 3.0), k * 3.0 + 3.0; cs = [(x + sx * s, y + sy * s) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+        for j in range(4): beam(mb, (*cs[j], za_), (*cs[j], z1), .3, m); beam(mb, (*cs[j], za_), (*cs[(j + 1) % 4], z1), .16, m)
     zt = int(H // 3) * 3.0; mb.box((x, y, zt), 1.5, 1.5, 1.6, dk, ang); q = np.array([x, y]) + d * 1.9 - nv * 1.2; mb.box((q[0], q[1], zt + .2), .9, .8, 1.7, mat_flat('#e9e9e4'), ang)
     zb, za = zt + 1.9, zt + 3.3; P3 = lambda t, o, z: (x + d[0] * t + nv[0] * o, y + d[1] * t + nv[1] * o, z)
     for t in np.arange(0, jib, 3.0):
@@ -212,7 +242,10 @@ for _k, _a in enumerate(AR.get('dirt', [])):
     mb = MB(); stripe = {'gbc': '#3d8f5a', 'gtx': '#2f6fb3'}.get(kind, rnd.choice(['#d9822b', '#2f6fb3', '#3d8f5a']))
     for g in parts(inner):   # 가림막(흰 강판 + 색 띠)
         if g.area < 150: continue
-        g = orient(g, 1.0); skin(mb, g, 0.0, lambda x, y: 3.2, mat_flat('#eceae4'), 1, 1); skin(mb, orient(g.buffer(.06), 1.0), 2.2, lambda x, y: 2.8, mat_flat(stripe), 1, 1)
+        wall = g.difference(g.buffer(-.4, join_style=2))   # 3 m 가림벽(두께 0.4 m: 위에서도 흰 선으로 보인다) + 색 띠
+        for w_ in parts(wall):
+            w_ = orient(w_, 1.0); skin(mb, w_, 0.0, lambda x, y: 3.0, mat_flat('#eceae4'), 1, 1); capf(mb, w_, lambda x, y: 3.0, mat_flat('#f6f5f0'))
+        skin(mb, orient(g.buffer(.05, join_style=2), 1.0), 1.9, lambda x, y: 2.5, mat_flat(stripe), 1, 1)
     cores = []
     for pi_, g in enumerate(pits):
         c_, ax_, Lx, Ly, _ = mrr_axes(g); nv = np.array([-ax_[1], ax_[0]]); fl = g.buffer(-5.5)
@@ -251,9 +284,17 @@ for _k, _a in enumerate(AR.get('dirt', [])):
             elif k_ < .74: excavator(mb, q, 0.0, rnd.uniform(0, 6.28))
             else:
                 for j in range(rnd.randrange(2, 5)): obox(mb, np.array(q) + np.array([0, j * 1.1]), (math.cos(ang), math.sin(ang)), 3.2, .4, 0.0, .5, mat_flat(rnd.choice([RUST, '#6b4a3a', '#8d8f8c'])))
-    for q, nfl in cores: p_ = (q[0] + 13.0, q[1] + 12.0); tcrane(mb, p_, max(36.0, nfl * 4.2 + 34.0), rnd.uniform(0, 6.28), jib=rnd.choice([40.0, 46.0, 52.0]))
+    ncr = 0   # 타워크레인: 골조마다 한 대, 굴착 구간에는 긴 축을 따라 약 110 m 마다, 그래도 없으면 터 가운데에 한 대
+    for q, nfl in cores: p_ = (q[0] + 13.0, q[1] + 12.0); tcrane(mb, p_, max(36.0, nfl * 4.2 + 34.0), rnd.uniform(0, 6.28), jib=rnd.choice([40.0, 46.0, 52.0])); ncr += 1
+    for g in pits:
+        c_, ax_, Lx, Ly, _ = mrr_axes(g); fl = g.buffer(-3.0); n_ = int(Lx // 110) + (1 if kind == 'gtx' else 0)
+        for i_ in range(n_):
+            q = c_ + ax_ * ((i_ + .5) / n_ - .5) * Lx * .86
+            if fl.contains(Point(*q)) and all(np.hypot(*(q - np.array(o))) > 34 for o, _n in cores): tcrane(mb, q, rnd.choice([39.0, 45.0, 51.0]), rnd.uniform(0, 6.28), jib=rnd.choice([36.0, 42.0]), col='#d9482e' if kind == 'gtx' else YEL, z0=PITZ); ncr += 1
+    if not ncr:
+        q = inner.buffer(-5.0).representative_point() if not inner.buffer(-5.0).is_empty else None
+        if q is not None: tcrane(mb, (q.x, q.y), rnd.choice([30.0, 36.0]), rnd.uniform(0, 6.28), jib=30.0)
     if kind == 'gtx':
-        for q in _spots(ring, 3, rnd, 9.0): tcrane(mb, q, rnd.choice([39.0, 45.0]), rnd.uniform(0, 6.28), jib=38.0, col='#d9482e')
         for ln, r in _DRV:   # 차로 옆 플라스틱 방호벽(주황·흰색 번갈아)
             if r['cls'] != 'major' or not ln.intersects(poly): continue
             for sgn in (1, -1):
