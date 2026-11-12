@@ -1293,8 +1293,9 @@ export function createPeople(scene, grid, opts = {}) {
     for (const c of [P('mulbit'), P('park_plaza')]) if (c) mkBusker(c);
     // 벤치(그늘 아래): 공원·강변 보행로 옆
     for (let k = 0; k < 18; k++) { const c = k < 8 && P('park') ? P('park') : rp(); if (c) mkBench(c, 5, k < 8 ? 330 : 120, BIT.PAVE | BIT.DIRT, k % 3 === 2); }
-    for (let k = 0; k < 4; k++) { const c = P('park') || rp(); mkSoap(c, 10, 320, BIT.PAVE | BIT.DIRT | BIT.GRASS); }
-    for (let k = 0; k < 4; k++) mkSnow(k < 2 && P('park') ? P('park') : rp(), 5, 200, BIT.PAVE | BIT.DIRT | BIT.GRASS);
+    // 공원 앵커도 강변 띠도 없는 지도(강이 없는 판)에서는 자리가 없다 → 건너뛴다
+    for (let k = 0; k < 4; k++) { const c = P('park') || rp(); if (c) mkSoap(c, 10, 320, BIT.PAVE | BIT.DIRT | BIT.GRASS); }
+    for (let k = 0; k < 4; k++) { const c = k < 2 && P('park') ? P('park') : rp(); if (c) mkSnow(c, 5, 200, BIT.PAVE | BIT.DIRT | BIT.GRASS); }
     for (let k = 0; k < 12; k++) mkFish();
     // 잔디: 소풍(돗자리)·앉은 사람·공놀이·연
     const pw = (sc) => outdoors() && E.tod >= 10.5 && eveBoost(sc);   // 돗자리 소풍: 늦은 아침부터

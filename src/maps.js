@@ -1,7 +1,7 @@
 // 지도별 설정을 한 곳에 모은다. 주소의 ?map=<id> 로 고르고(없으면 경복궁), 화면의 전환 버튼은 그 주소로 다시 연다.
 // 여기 없는 값(카메라, 깊이 디코드 상수, 경로)은 장면 데이터에서 온다:
-//   경복궁 = assets/web-poc/scene.json(.gz), 여의도 = assets/yeouido/map.json → mapscene.js 가 같은 모양으로 바꾼다.
-// 좌표는 모두 그 지도의 지도 px(2752×1696 캔버스). 경복궁 1 px = 0.5 m, 여의도 1 px = 1 m.
+//   경복궁 = assets/web-poc/scene.json(.gz), 여의도·테헤란로 = assets/<지도>/map.json → mapscene.js 가 같은 모양으로 바꾼다.
+// 좌표는 모두 그 지도의 지도 px(2752×1696 캔버스). 경복궁 1 px = 0.5 m, 여의도 1 px = 1 m, 테헤란로 1 px = 1.25 m.
 import { PLACES as GB_PLACES, SHOTS as GB_SHOTS } from './tour.js';
 
 export const MAPS = {
@@ -55,6 +55,40 @@ export const MAPS = {
     // 사람: profile 'city' = 경복궁 전용 장면(수문장·관람 시간·한복 비율) 대신 공원·강변·업무지구 장면(sim/people.js). 찾아보기는 아직 경복궁만.
     people: true, profile: 'city', birds: false, finds: false, traffic: 'simple', cars: 2500,   // cars = 출퇴근 때 대수(낮 약 1900, 밤 약 900: simple-traffic demandAt)
     parking: 900,                                 // 세워 둔 차 최대 대수(sim/parking.js, ?parked=0 이면 없음)
+  },
+  teheran: {
+    id: 'teheran', label: '테헤란로',
+    dir: 'teheran',
+    map: 'map.json',
+    cls: null,
+    docTitle: '서울 미니어처 — 테헤란로', h1: '테헤란로, 살아 있는 미니어처',
+    canvasLabel: '강남역에서 삼성역까지 테헤란로와 선릉의 미니어처',
+    // 자리는 여의도처럼 map.json 의 랜드마크 이름으로 가리킨다(역은 station_<이름>). 1 px = 1.25 m.
+    places: [
+      { name: '전체', at: 'center', vh: 1500, note: '강남역에서 삼성역까지' },
+      { name: '선릉역', key: 'station_선릉', vh: 340, note: '선릉역 — 테헤란로 한가운데' },
+      { name: '선릉·정릉', key: 'seolleung', vh: 460, note: '선릉과 정릉 — 빌딩 숲 속 조선 왕릉' },
+      { name: '위워크타워', key: 'wework', vh: 260, note: '위워크타워 — 선릉과 포스코센터 사이' },
+      { name: '삼성역', key: 'station_삼성', vh: 420, note: '삼성역 — GTX 복합환승센터와 현대차 신사옥 공사 현장' },
+      { name: '코엑스', key: 'coex', vh: 420, note: '코엑스와 트레이드타워' },
+      { name: '역삼역', key: 'station_역삼', vh: 340, note: '역삼역 — 강남파이낸스센터' },
+      { name: '강남역', key: 'station_강남', vh: 380, note: '강남역 — 테헤란로가 시작하는 곳' },
+    ],
+    shots: [
+      { d: 7, a: { at: 'station_강남', vh: 620 }, b: { at: 'gt', vh: 380 }, tod: [6.6, 8.4], season: 1, caption: '아침의 강남역' },
+      { d: 7, a: { at: 'gfc', vh: 520 }, b: { at: 'station_역삼', vh: 360 }, tod: [8.6, 10.4], season: 1, caption: '출근길 역삼역' },
+      { d: 8, a: { at: 'station_선릉', vh: 420 }, b: { at: 'tomb_seongjong', vh: 300 }, tod: [11, 13.5], season: 0, caption: '봄 — 선릉' },
+      { d: 7, a: { at: 'seolleung', vh: 520 }, b: { at: 'wework', vh: 320 }, tod: [14, 16.2], season: 2, caption: '가을 — 정릉과 위워크타워' },
+      { d: 7, a: { at: 'coex', vh: 560 }, b: { at: 'station_삼성', vh: 400 }, tod: [16.6, 18.8], season: 2, caption: '해 질 녘 삼성역 공사 현장' },
+      { d: 8, a: { at: 'station_선릉', vh: 620 }, b: { at: 'center', vh: 1500 }, tod: [19.4, 22.6], season: 3, caption: '겨울밤, 불이 켜진 테헤란로' },
+    ],
+    noticeMore: '',
+    palace: null, uplights: [],
+    firstView: { wide: [0.5, 0.5, 0.9], box: { at: ['station_선릉', 'seolleung'], w: 850, h: 680 } },
+    busDemo: null,
+    windows: 'grid',
+    people: true, profile: 'city', birds: false, finds: false, traffic: 'simple', cars: 2500,
+    parking: 600,
   },
 };
 export const DEFAULT_MAP = 'gyeongbok';

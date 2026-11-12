@@ -54,6 +54,19 @@
 
 이 46건의 형태를 3D 장면에 넣었다. 목록에 없는 전각은 OSM 윤곽과 높이로 만든 모형이다.
 
+## 테헤란로 (`assets/teheran/`)
+
+이 포크에서 더한 지도다. 그림은 Blender 장면의 렌더를 색만 줄인 것이고, 이미지 생성·편집 모델을 쓰지 않았다.
+
+| 자료 | 쓴 곳 | 조건 |
+|---|---|---|
+| OpenStreetMap: 건물 윤곽·높이·층수, 도로, 녹지, 공사 터(`landuse=construction`), 왕릉(`historic=tomb`), 지하철 출입구·역 | 배치 전부 | ODbL 1.0, 「© OpenStreetMap contributors」 |
+| Overture Maps 건물 테마 가운데 OSM 이 아닌 출처의 풋프린트(East Asian Buildings, doi:10.5281/zenodo.8174931) 1,429개 | OSM 에 건물이 비어 있는 블록의 건물 윤곽(높이는 면적으로 추정) | CC BY 4.0 (Overture 배포본: CDLA-Permissive-2.0 / ODbL) |
+
+- 랜드마크의 색·입면 구성은 네이버 지도 거리뷰를 사람이(작업한 에이전트가) 눈으로 보고 3D 모델에 옮겼다. 화면을 저장소나 그림에 넣지 않았고, 확인용으로 찍은 화면은 작업 폴더 밖 임시 폴더에만 두었다.
+- 건물 높이는 OSM `height` → `building:levels` 순으로 읽고, 없으면 건물 종류·면적·큰길 접함으로 추정했다. 봉분 언덕의 높이, 공사 현장의 골조·장비 배치는 연출이다.
+- 장면 데이터(`map.json`)는 OSM 에서 왔으므로 **ODbL 1.0**, 그림은 다른 지도와 같이 **CC BY 4.0** 이다.
+
 ## 여의도 (`assets/yeouido/`)
 
 | 파일 | 내용 | 어디서 왔나 |

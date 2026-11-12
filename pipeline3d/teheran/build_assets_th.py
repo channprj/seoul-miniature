@@ -40,6 +40,7 @@ def finish_mapjson(a):
     for t in S.get('tombs', []):
         k, nm = short.get(t['name'], ('tomb_' + t['name'], t['name'])); p = cam.proj([t['c'] + [0.0]])[0] / yd.F
         m['landmarks'][k] = {'name': nm, 'kind': 'place', 'in_canvas': True, 'px': [round(float(p[0]), 1), round(float(p[1]), 1)], 'local_m': t['c'] + [0.0]}
+    if m['landmarks'].get('seolleung', {}).get('px'): m['landmarks']['park'] = dict(m['landmarks']['seolleung'])   # 앱의 도시 사람 장면(벤치·산책·눈사람)이 'park' 앵커 둘레에 놓인다
     f.write_text(json.dumps(m, ensure_ascii=False, separators=(',', ':')))
     yd.log('map.json(teheran)', f.stat().st_size, 'B; landmarks', sorted(k for k, v in m['landmarks'].items() if v.get('px')), 'lanes', len(m['lanes']), 'walk', len(m['walk_paths']))
 

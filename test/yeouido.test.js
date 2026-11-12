@@ -61,7 +61,7 @@ const load = () => {
 test('지도 고르기: ?map= 과 전환 주소', () => {
   assert.equal(mapIdFrom(''), DEFAULT_MAP);
   // 2026-11-12 여의도 공개: dev 없이도 공개 사이트에서 열린다.
-  assert.equal(isPublic('yeouido'), true); assert.deepEqual(publicMaps().map((m) => m.id), ['gyeongbok', 'yeouido']);
+  assert.equal(isPublic('yeouido'), true); assert.deepEqual(publicMaps().map((m) => m.id), ['gyeongbok', 'yeouido', 'teheran']);
   assert.equal(mapIdFrom('?map=yeouido&tod=3', false), 'yeouido');
   assert.equal(mapIdFrom('?map=yeouido', true), 'yeouido');
   assert.equal(mapIdFrom('?map=yeouido&dev=1&tod=3', true), 'yeouido');

@@ -3,7 +3,7 @@
 **경복궁과 여의도를 실제 지도 배치 그대로 옮긴, 살아 움직이는 픽셀아트 미니어처.**
 시간·계절·날씨가 바뀌고, 사람과 자전거와 차가 돌아다닙니다. 브라우저에서 바로 열립니다.
 
-**[▶ 경복궁 보기](https://midagedev.github.io/seoul-miniature/) · [▶ 여의도 보기](https://midagedev.github.io/seoul-miniature/?map=yeouido) · [3D 장면 받기](https://github.com/midagedev/seoul-miniature/releases) · [만든 방법](docs/PIPELINE.md) · [쓴 프롬프트](docs/PROMPTS.md) · [가져다 쓰기](docs/REUSE.md)**
+**[▶ 경복궁 보기](https://midagedev.github.io/seoul-miniature/) · [▶ 여의도 보기](https://midagedev.github.io/seoul-miniature/?map=yeouido) · [▶ 테헤란로 보기(이 포크)](https://channprj.github.io/seoul-miniature/?map=teheran) · [3D 장면 받기](https://github.com/midagedev/seoul-miniature/releases) · [만든 방법](docs/PIPELINE.md) · [쓴 프롬프트](docs/PROMPTS.md) · [가져다 쓰기](docs/REUSE.md)**
 
 ![여의도 전체](docs/img/yeouido_overview.jpg)
 
@@ -31,6 +31,16 @@ A living pixel-art miniature of two Seoul neighbourhoods: the Gyeongbokgung Pala
 - **Reuse it**: pictures are CC BY 4.0, scene data and the Blender/glTF scenes are ODbL 1.0 ([Releases](https://github.com/midagedev/seoul-miniature/releases)), code is MIT. The exact prompts and scripts are in `docs/PROMPTS.md` and `pipeline3d/`. Documentation is in Korean.
 
 </details>
+
+## 테헤란로(이 포크에서 더한 지도)
+
+강남역에서 삼성역까지 테헤란로 3.3 km 와 그 둘레(화면 3440 × 2120 m)를 한 장에 담았습니다. 강남역·역삼역·선릉역·삼성역, 선릉과 정릉(봉분 언덕·정자각·홍살문), 위워크타워, 포스코센터, 강남파이낸스센터, GT타워, 삼성 서초사옥, 코엑스·트레이드타워가 들어 있습니다. 삼성역 일대는 지금 모습대로 공사 현장입니다: 현대차 GBC 터에는 골조가 올라오는 코어와 타워크레인, 영동대로에는 복합환승센터(GTX) 굴착 구간의 버팀보·복공판·가림벽이 있습니다.
+
+- 만드는 틀은 여의도와 같습니다(OSM → Blender 장면 → 고정 카메라 렌더 → 굽기). 카메라는 남남서쪽에서 북북동쪽을 봅니다(강남역이 왼쪽 아래, 삼성역이 오른쪽 위). 그림은 15.6 cm/px, 지도 1 px 는 1.25 m 입니다.
+- **양식 패스(이미지 모델)를 거치지 않았습니다.** 이 지도의 그림은 3D 렌더를 128색으로 줄인 것 그대로라서, 경복궁·여의도의 픽셀아트 결과는 결이 다릅니다(벽돌·간판 같은 손그림 세부가 없습니다). GPU 로 양식 패스를 돌리면 같은 조건 렌더에서 이어서 구울 수 있습니다(`pipeline3d/teheran/build_assets_th.py --raw`).
+- OSM 에 건물이 비어 있던 블록은 Overture 건물 테마의 East Asian Buildings 풋프린트 1,429개로 채웠고, 높이 태그가 없는 건물은 종류·면적·큰길 접함으로 추정했습니다.
+- 랜드마크의 색과 입면 구성은 네이버 지도 거리뷰를 눈으로 보고 맞췄습니다(사진은 저장소에 없습니다). 거리뷰에서 잘 안 보인 건물과 옥상은 추정입니다. 공사 현장의 장비·골조 배치는 연출입니다.
+- 스크립트와 순서는 [`pipeline3d/teheran/`](pipeline3d/teheran/run.sh), 출처는 [CREDITS.md](CREDITS.md)의 「테헤란로」에 있습니다.
 
 ## 어떻게 만들었나
 
@@ -70,7 +80,7 @@ A living pixel-art miniature of two Seoul neighbourhoods: the Gyeongbokgung Pala
 | 경로 | 내용 |
 |---|---|
 | `index.html`, `style.css`, `src/` | 뷰어. 빌드 없이 그대로 열리는 ES 모듈(WebGL2). GitHub Pages 가 저장소 루트를 그대로 서빙합니다 |
-| `assets/` | 뷰어가 쓰는 그림 타일·깊이·분류 맵과 장면 데이터(경복궁 `redraw/`·`web-poc/`, 여의도 `yeouido/`) |
+| `assets/` | 뷰어가 쓰는 그림 타일·깊이·분류 맵과 장면 데이터(경복궁 `redraw/`·`web-poc/`, 여의도 `yeouido/`, 테헤란로 `teheran/`) |
 | `test/` | 교통·사람 시뮬레이션, 투영, 타일, PNG 디코더, 밤 창문, 지도 전환의 `node --test` 테스트 |
 | `pipeline3d/` | 지금 그림을 만든 스크립트: 3D 장면·조건 렌더(Blender `bpy`), 양식 패스(ComfyUI 조정자·워커), 굽기 |
 | `pipeline/` | 이전 판 그림을 만든 도구(OSM 받기 → 색 블록 밑그림 → 타일 생성 → 검사 → 병합) |
@@ -81,11 +91,11 @@ A living pixel-art miniature of two Seoul neighbourhoods: the Gyeongbokgung Pala
 
 ```bash
 git clone https://github.com/midagedev/seoul-miniature && cd seoul-miniature
-node serve.mjs 5173        # http://127.0.0.1:5173/  (의존성 없음), 여의도는 /?map=yeouido
+node serve.mjs 5173        # http://127.0.0.1:5173/  (의존성 없음), 여의도는 /?map=yeouido, 테헤란로는 /?map=teheran
 npm install && npm test    # 테스트를 돌릴 때만
 ```
 
-주소 옵션: `?map=yeouido` 여의도 · `?res=1` 절반 해상도 그림 · `?cars=150` 차량 수 · `?tilt=0` 미니어처 흐림 끄기 · `?tour` 자동 둘러보기 · `?clean` UI 숨김 ·
+주소 옵션: `?map=yeouido` 여의도 · `?map=teheran` 테헤란로 · `?res=1` 절반 해상도 그림 · `?cars=150` 차량 수 · `?tilt=0` 미니어처 흐림 끄기 · `?tour` 자동 둘러보기 · `?clean` UI 숨김 ·
 `#x,y,높이` 특정 위치로 바로 열기(화면 아래 「링크 복사」가 만들어 줍니다). 전체 목록은 [docs/APP.md](docs/APP.md).
 
 ## 한계

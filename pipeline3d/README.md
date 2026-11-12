@@ -26,6 +26,9 @@
 | `yeouido/yd_prompt.py`, `yeouido/yd_prompt_halfF.py` | 프롬프트 | 창마다 프롬프트를 조립하는 모듈(여의도 전체 실행에 쓴 판) |
 | `yeouido/export_movers.py` | 앱 | 차로·철도·배 경로 |
 | `yeouido/build_assets_yd.py` | 굽기 | cache → lock → quant → maps → tiles → mapjson → keys |
+| `teheran/fetch_osm.sh`, `teheran/prep_extra.py` | 입력·장면 자료 | 테헤란로: OSM 받기(건물은 여섯 칸으로 나눠서) + Overture 풋프린트, `yeouido/prep.py` 결과에 건물 보충·큰길가 높이·랜드마크 윤곽·지하철 출입구·왕릉·교량 높이를 더한다 |
+| `teheran/cam.py`, `teheran/lm_build.py` | 카메라·빌더 | 판 T(θ −24°, 15.625 cm/px). 랜드마크(위워크타워·GT타워·코엑스 등), 기와지붕 전각, 봉분 언덕, 홍살문, 공사 현장(가림벽·굴착·버팀보·골조·타워크레인). `yeouido/gen_area.py` 가 `P3D_AREA` 로 읽는다 |
+| `teheran/render_tiles.sh`, `teheran/build_assets_th.py`, `teheran/run.sh` | 렌더·굽기 | 8×8 타일 렌더, 양식 패스 없이 조건 렌더를 그대로 굽는 굽기(여의도 굽기의 단계 함수를 부른다), 처음부터 끝까지의 순서 |
 | `gyeongbokgung/gen.py` | Blender 장면 + 렌더 | 경복궁 장면(한옥·궁궐·담·나무·국가유산청 모델 배치) |
 | `gyeongbokgung/osm_blds.py`, `prep_ground.py` | 입력 | OSM 건물 보충, 지면 그림·지면 분류 |
 | `gyeongbokgung/render_all.sh`, `stitch.py`, `make_classes.py` | 렌더 | 8×8 타일 렌더, 이어 붙이기, 0.5 m 분류 맵 |
@@ -55,6 +58,10 @@
 | `P3D_OLD_CLASSES` | `gyeongbokgung/prep_ground.py` | 이전 판 앱 클래스 맵(0.5 m). 렌더에 녹지가 없던 곳을 잔디로 보충하는 데만 쓴다 |
 | `P3D_KHS` | `gyeongbokgung/gen.py` | 국가유산청 광화문 3D 기록을 풀어 둔 폴더(아래). 없으면 광화문을 OSM 윤곽 모형으로 세운다 |
 | `P3D_KHSP` | `gyeongbokgung/gen.py` | 전각 배치 파일(json). 없으면 전각을 OSM 윤곽 + 규칙 지붕으로 세운다 |
+| `P3D_AREA`, `P3D_SCENE` | `yeouido/gen_area.py`, `export_movers.py`, `make_classes_ydF.py` | 다른 지역의 `cam.py`·`lm_build.py` 폴더(기본 `yeouido/`), 장면 자료 경로(기본 `P3D_AREA/scene.json`) |
+| `P3D_ORG`, `P3D_LM` | `yeouido/prep.py` | 지역 원점(EPSG:5186 m, JSON 배열), 랜드마크 표(JSON). 기본은 여의도 |
+| `P3D_DZS` | `yeouido/gen_area.py` | 깊이 패스 단위(m, 기본 0.05). 화면 세로가 약 2100 m 를 넘는 판은 키운다(테헤란로 0.0625) |
+| `YD_PASS`, `YD_BOARD`, `YD_CLS` | `yeouido/stitch_halfF.py`, `make_classes_ydF.py`, `export_movers.py` | 타일 폴더(기본 `halfF`), 판 이름(기본 `F`), 지면 분류 래스터(기본 `clsF/ground_cls`) |
 | `P3D_W`, `P3D_H` | 두 생성기 | 렌더 창 크기(px). 타일 렌더는 2752×1696 |
 | `P3D_PXR` | `yeouido/gen_area.py` | 렌더 해상도(m/px). 여의도는 0.125 |
 | `P3D_SPP`, `P3D_THREADS` | `yeouido/gen_area.py` | Cycles 표본 수(여의도 256), 프로세스당 스레드 |
@@ -142,6 +149,17 @@ python build_assets_yd.py all --raw runs/r1/raw.png --pass halfF --work bake_r1 
 `render_tiles.sh` 는 `gen_area.py` 를 타일마다 따로 띄웁니다(동시 프로세스 16 이하로 막아 두었습니다). 여의도 64타일은 16병렬 × 4스레드로 22–24분 걸렸습니다.
 
 그다음 뷰어 쪽: 굽기 결과(`bake_r1/` 의 tiles, bg.png, bg_1x.png, depth_rg8.png, classes.png, crown.png, map.json)를 `assets/<지도>/` 에 둡니다. 밤 창문 격자 파일 `winfaces.json` 을 미리 계산하는 도구는 공개 저장소에 아직 없습니다. 파일이 없으면 앱이 첫 확대 때 타일에서 계산합니다.
+
+## 테헤란로 순서
+
+여의도 스크립트를 환경 변수로 지역만 바꿔 다시 쓰고, 지역 고유의 것만 `teheran/` 에 둡니다. 양식 패스는 돌리지 않았습니다(GPU 가 없는 장비에서 만들었습니다). 순서 전체가 `teheran/run.sh` 에 있습니다.
+
+```bash
+mkdir -p work/teheran && cd work/teheran
+PY=/path/to/python-with-bpy bash ../../pipeline3d/teheran/run.sh      # OSM 받기 → scene.json → 렌더 → 분류 맵 → 굽기 → assets/teheran/
+```
+
+Apple M5 Pro(15코어)에서 64타일 렌더(48 spp, 2프로세스 × 7스레드)가 약 30분, 굽기가 몇 분 걸렸습니다. 장면을 고친 뒤에는 `passT/` 의 해당 타일 파일을 지우고 `render_tiles.sh` 를 다시 돌리면 그 타일만 렌더합니다.
 
 ## 경복궁 순서
 
