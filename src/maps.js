@@ -70,7 +70,7 @@ export const MAPS = {
       { name: '선릉·정릉', key: 'seolleung', vh: 460, note: '선릉과 정릉 — 빌딩 숲 속 조선 왕릉' },
       { name: '위워크타워', key: 'wework', vh: 260, note: '위워크타워 — 선릉과 포스코센터 사이' },
       { name: '삼성역', key: 'station_삼성', vh: 420, note: '삼성역 — GTX 복합환승센터와 현대차 신사옥 공사 현장' },
-      { name: '삼성역 광장', key: 'millennium', vh: 150, note: '삼성역 광장 — 코엑스 밀레니엄 광장의 선큰 마당과 달걀꼴 조형탑, 출구 앞 공사 야적장' },
+      { name: '삼성역 광장', key: 'millennium', vh: 150, note: '삼성역 광장 — 밀레니엄 광장의 강철 기둥과 은빛 구, 달걀꼴 조형탑, 출구 앞 공사 야적장' },
       { name: '코엑스', key: 'coex', vh: 420, note: '코엑스와 트레이드타워' },
       { name: '역삼역', key: 'station_역삼', vh: 340, note: '역삼역 — 강남파이낸스센터' },
       { name: '강남역', key: 'station_강남', vh: 380, note: '강남역 — 테헤란로가 시작하는 곳' },

@@ -1100,7 +1100,7 @@ for g in parts(LAND):
     for t in shapely.constrained_delaunay_triangles(g).geoms:
         q = list(orient(t, 1.0).exterior.coords)[:-1]; mb.face([(x, y, 0.0) for x, y in q], gmat, [uvw(x, y) for x, y in q])
 STEPP = STEPZ.buffer(1.0); shapely.prepare(STEPP); nsk = 0
-NOSK = globals().get('NOSKIRT')   # 지역 빌더가 둘레를 직접 세우는 구덩이(선큰 광장 등): 이 안의 물가 변에는 비탈을 두르지 않는다
+NOSK = globals().get('NOSKIRT')   # 지역 빌더가 둘레를 직접 세우는 구덩이(광장의 내리막 계단 등): 이 안의 물가 변에는 비탈을 두르지 않는다
 for g in parts(WATERc):
     g = orient(g, 1.0)
     for ring in [g.exterior] + list(g.interiors):

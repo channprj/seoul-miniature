@@ -145,32 +145,38 @@ TH_N = [(1150.0, 444.8), (1181.0, 453.8), (1256.3, 482.1)]             # 테헤�
 gates = unary_union([Point(*e['xy']).buffer(5.5) for e in S['transit']['entrances'] if e['station'] == '삼성'])
 yard = Polygon(FENCE + [rd(92.0, EDGE), rd(23.6, EDGE)] + TH_N[::-1]).buffer(0).difference(gates).buffer(-.01)
 yard = max(yard.geoms, key=lambda g: g.area) if yard.geom_type == 'MultiPolygon' else yard
-court = dict(c=[1189.5, 519.5], a=15.5, b=12.5)                        # 밀레니엄 광장: 타원꼴 선큰 마당(지하 상가 층). 실제 깊이 약 5 m 는 1.4 m 로 줄여 세운다(지면 판이 −1.8 m 에 있고, 굽기가 −1.55 m 아래 지면을 물로 읽는다)
+court = dict(c=[1189.5, 519.5], a=15.5, b=12.5)                        # 밀레니엄 광장의 원형 광장(지면 높이: 가운데 스테인리스 구, 둘레 강철 기둥). 위성 사진에서는 비스듬히 찍혀 타원으로 보인다
+def esec(f0, f1, a0, a1, fa=None, fb=None, n=4.0):   # 원형 광장 둘레의 고리 조각(각도 a0–a1°, 반지름 비 f0–f1; fa·fb 를 주면 바깥 반지름을 m 로)
+    A_ = np.radians(np.arange(a0, a1 + .01, n)); cx, cy = court['c']; ao, bo = (fa, fb) if fa else (court['a'] * f1, court['b'] * f1)
+    return Polygon([(cx + ao * math.cos(t), cy + bo * math.sin(t)) for t in A_] + [(cx + court['a'] * f0 * math.cos(t), cy + court['b'] * f0 * math.sin(t)) for t in A_[::-1]])
+stair = esec(1.1, None, 95.0, 235.0, 20.0, 19.5)                         # 광장 서북쪽을 감싸는 초승달꼴 내리막 계단(지하 상가 입구, 흰 난간벽). 실제 깊이 약 5 m 는 1.4 m 로 줄인다(지면 판이 −1.8 m 에 있고, 굽기가 −1.55 m 아래 지면을 물로 읽는다)
 lawn = {  # 이름 → 꼴. 잔디(지면 분류)로 칠하고, 빌더가 낮은 돌 턱을 두른다
     'strip': Polygon([rd(96, EDGE + .3), rd(214, EDGE + .3), rd(214, EDGE + 4.5), rd(96, EDGE + 4.5)]),      # 길가 잔디 띠(가로수 줄)
     'p1': rrect((1199.0, 608.0), 5.0, 1.8), 'p2': rrect((1205.2, 584.5), 4.8, 2.2), 'p3': rrect((1216.5, 559.0), 5.0, 2.4),
     'hedge': band([(1167.5, 607.0), (1174.0, 590.0), (1180.0, 574.0), (1186.0, 556.0), (1188.5, 548.5)], 5.0),   # 아티움 앞 화단 띠
     'isle': ell((1142.0, 489.5), 5.2, 5.2), 'pl1': rrect((1162.0, 534.5), 1.6, 1.6, (1, 0)), 'pl2': rrect((1165.5, 525.0), 1.6, 1.6, (1, 0)),
-    'egg': ell((1202.0, 497.0), 2.2, 2.2, 16)}
+    'egg': ell((1202.0, 497.0), 2.2, 2.2, 16),
+    'rim_e': esec(1.05, 1.24, -22.0, 22.0), 'rim_n': esec(1.05, 1.24, 68.0, 92.0), 'rim_s': esec(1.05, 1.24, 238.0, 292.0)}   # 원형 광장 돌 턱 바깥의 잔디 띠
 for k in range(6): lawn['t%d' % k] = rrect(np.array([1187.0, 583.0]) + NV * k * 2.7 + EV * ((k % 2) * 2.4 - 1.2), 1.15, .9)   # 디딤 잔디(엇갈린 작은 네모)
 bed = {  # 꽃밭(붉은·분홍 꽃). 지면 분류는 잔디, 빌더가 돌 턱 + 꽃 덩어리를 올린다
     'garden': Polygon([(1163.0, 631.0), (1182.0, 632.0), (1175.0, 660.0), (1166.0, 660.0), (1160.0, 648.0)]),
     'oval1': ell((1151.0, 669.0), 7.0, 4.6, 24, NV), 'oval2': ell((1144.0, 685.0), 7.0, 4.6, 24, NV),
     'wave': band([(1171.5, 596.0), (1176.5, 586.0), (1179.5, 575.0), (1184.5, 566.0), (1186.0, 556.0)], 1.8)}
 green = unary_union(list(lawn.values()) + list(bed.values()))
+green = green.difference(stair)
 pave = Polygon([(1118.0, 457.2)] + FENCE + [rd(92.0, EDGE), rd(259.8, EDGE), (1128.0, 700.0), (1128.0, 600.0), (1118.0, 560.0)]).buffer(0).difference(yard.buffer(.01))
 for g_, key, nm in [(pave.difference(green), 'plaza', '코엑스 동측 광장'), (green.intersection(pave), 'grass', '코엑스 동측 광장 화단'), (yard, 'dirt', '삼성역 광장 공사 야적장')]:
     for q in (g_.geoms if hasattr(g_, 'geoms') else [g_]):
         if q.geom_type == 'Polygon' and q.area > 2: S['areas'].setdefault(key, []).append({'rings': [np.round(np.array(r.coords), 2).tolist() for r in [q.exterior] + list(q.interiors)], 'name': nm, 'sport': ''})
 R2 = lambda g: np.round(np.array(g.exterior.coords), 2).tolist()
 S['samseong'] = {
-    'q0': Q0.tolist(), 'nv': NV.tolist(), 'edge': EDGE, 'fence': FENCE, 'yard': R2(yard), 'court': court,
+    'q0': Q0.tolist(), 'nv': NV.tolist(), 'edge': EDGE, 'fence': FENCE, 'yard': R2(yard), 'court': court, 'stair': dict(a0=95.0, a1=235.0, f=1.1, a=20.0, b=19.5),
     'pave': [np.round(np.array(r.coords), 2).tolist() for r in [pave.exterior] + list(pave.interiors)],
     'lawn': {k: R2(v) for k, v in lawn.items()}, 'bed': {k: R2(v) for k, v in bed.items()},
-    'egg': dict(c=[1190.0, 496.5], h=17.0, r=3.3),                                                    # 달걀꼴 흰 조형탑(환기탑)
-    'wells': [dict(c=[1175.7, 601.0], hl=4.5, hw=2.0), dict(c=[1186.7, 575.5], hl=4.0, hw=2.0), dict(c=[1197.0, 553.5], hl=3.5, hw=2.0)],   # 지하 상가 채광창(흰 턱 + 짙은 유리)
-    'canopy': dict(c=[1171.5, 537.5], ax=[.55, -.83], hl=4.5, hw=2.4),                                # 선큰 마당으로 내려가는 에스컬레이터 덮개(파란 유리)
-    'dome': dict(c=[1141.5, 517.5], r=4.6), 'tents': dict(c=[1142.0, 489.5], r=9.0, n=7, a0=100.0, a1=330.0, more=[[1158.0, 485.5], [1164.5, 488.0]]),   # 호텔 앞: 유리 원형 지붕, 흰 천막 줄
+    'egg': dict(c=[1190.0, 496.5], h=18.0, r=3.4),                                                    # 달걀꼴 은회색 조형탑(꼭대기에 금속 고리)
+    'pavs': [dict(c=[1175.7, 601.0], hl=4.5, hw=2.0), dict(c=[1186.7, 575.5], hl=4.0, hw=2.0), dict(c=[1197.0, 553.5], hl=3.5, hw=2.0)],   # 얕은 못 가운데 선 줄무늬 파빌리온(지하 상가 환기·채광 시설)
+    'canopy': dict(c=[1171.5, 537.5], ax=[.55, -.83], hl=4.5, hw=2.4),                                # 지하 상가로 내려가는 에스컬레이터 덮개(파란 유리)
+    'dome': dict(c=[1141.5, 517.5], r=4.6), 'flags': [[1119.0 + 1.9 * k, 474.0 + .75 * k] for k in range(8)], 'stone': [1181.0, 492.5],   # 호텔 앞 유리 원형 지붕과 깃대 줄, 돌 조형 기둥
 }
 # 광장 나무: 목록 끝에 붙인다(나무 모양은 목록 순번으로 정해지므로, 중간에 끼우거나 빼면 지도 전체의 나무가 달라진다)
 _new = [(1162.0, 534.5, 2.2), (1165.5, 525.0, 2.2), (1202.0, 497.0, 2.6), (1171.0, 598.5, 2.3), (1176.5, 582.5, 2.4), (1182.5, 566.0, 2.3), (1187.5, 552.0, 2.2)] + \

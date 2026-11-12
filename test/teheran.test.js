@@ -74,18 +74,22 @@ test('테헤란로 클래스·깊이: 도로·건물·수목이 있고, 궁궐 �
   assert.ok(top > 150 && top < 320, `가장 높은 곳 ${top.toFixed(0)} m`);
 });
 
-test('삼성역 광장: 밀레니엄 광장 선큰 마당이 지면보다 낮고, 둘레는 걸을 수 있는 포장 광장', { skip }, async () => {
+test('삼성역 광장: 원형 광장은 걸을 수 있는 포장 바닥이고, 강철 기둥·달걀꼴 조형탑·내리막 계단이 있다', { skip }, async () => {
   const { scene, cls, w, heightAt } = await load();
-  const [ax, ay] = scene.anchors.millennium.map(Math.round);
-  let sunk = 0, plaza = 0, n = 0;
+  const [ax, ay] = scene.anchors.millennium.map(Math.round);   // 원형 광장 가운데(1 px = 1.25 m). 깊이 맵은 칸의 가장 가까운 면이라 평지가 약 +0.5 m 로 읽힌다
+  let plaza = 0, n = 0, pylon = 0, egg = 0, stair = 0;
   for (let dy = -40; dy <= 40; dy++) for (let dx = -40; dx <= 40; dx++) {
-    const x = ax + dx, y = ay + dy, c = cls[y * w + x];
+    const x = ax + dx, y = ay + dy, c = cls[y * w + x], hgt = heightAt(x, y), r = Math.hypot(dx, dy);
     n++;
     if (c === 11) plaza++;
-    if (c === 11 && Math.hypot(dx, dy) < 12 && heightAt(x, y) < -0.6) sunk++;   // 마당 바닥 −1.4 m. 깊이 맵은 칸의 가장 가까운 면이라 평지가 약 +0.5 m 로 읽힌다
+    if (r < 14 && hgt > 3 && hgt < 8) pylon++;            // 기둥 4.4–6.2 m
+    if (r < 32 && hgt > 12 && hgt < 22) egg++;            // 조형탑 18 m
+    if (c === 11 && r < 22 && hgt < -0.5) stair++;        // 계단 바닥 −1.4 m
   }
-  assert.ok(sunk > 40, `선큰 마당 칸 ${sunk}`);
   assert.ok(plaza / n > 0.25, `포장 광장 비율 ${(plaza / n).toFixed(2)}`);
+  assert.ok(pylon > 8, `기둥 칸 ${pylon}`);
+  assert.ok(egg > 8, `조형탑 칸 ${egg}`);
+  assert.ok(stair > 6, `내리막 계단 칸 ${stair}`);
 });
 
 test('테헤란로 교통·사람: 차가 차로를 달리고, 사람 장면이 예외 없이 돈다', { skip }, async () => {
