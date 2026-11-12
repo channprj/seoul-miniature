@@ -2,7 +2,7 @@
 # 테헤란로 한 구역만 고쳐 굽기. 작업 폴더(osm/ 이 있는 곳, 예: work/teheran)에서 실행한다. 전체를 다시 굽는 순서는 run.sh.
 #   PY=/path/to/python-with-bpy bash /path/to/pipeline3d/teheran/patch.sh "6_1[,i_j …]" [기준 커밋=HEAD] [patch_tiles.py 에 넘길 인자 …]
 # 기준 커밋의 코드로 「고치기 전」 타일을, 지금 작업 트리의 코드로 「고친 뒤」 타일을 렌더해 달라진 자리만 assets/teheran/ 에 덧입힌다(patch_tiles.py).
-# 자산은 기준 커밋의 것이어야 한다(다시 돌릴 때는 먼저 git checkout -- assets assets.manifest.json). 타일 가장자리에 닿는다는 경고가 나오면 이웃 타일을 더해 다시 돌린다.
+# 자산은 기준 커밋의 것이어야 한다(먼저 git checkout <기준 커밋> -- assets/teheran assets.manifest.json. 덧입힌 판 위에 다시 덧입히면 지운 물체의 화소가 남는다). 타일 가장자리에 닿는다는 경고가 나오면 이웃 타일을 더해 다시 돌린다.
 set -e
 T="$(cd "$(dirname "$0")" && pwd)"; REPO="$(cd "$T/../.." && pwd)"; PY=${PY:-python3}; TILES=$1; REV=${2:-HEAD}; shift; [ $# -gt 0 ] && shift; SPP=${SPP:-48}
 export P3D_DZS=0.0625 YD_BOARD=T YD_CLS=clsT/ground_cls
