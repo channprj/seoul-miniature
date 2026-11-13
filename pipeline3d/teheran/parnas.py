@@ -98,3 +98,34 @@ def hyundai_store(b, idx):
     if ok(q, 5.0): obox(mb, q, e, 6.0, 5.0, H, H + 4.2, mat_flat(stone), mat_flat('#a9aaa8'))                                        # 남동 모서리의 옥탑
     toonify(mb.build('b%d' % idx, idx))
 SPECIAL = {'w74013224': hyundai_store}
+
+# ================= 현대아이파크타워의 입면 조형 =================
+# 네이버 지도 거리뷰(2026-07 촬영분, 영동대로 건너편 세 자리와 남·서쪽)를 보고 만들었다. 청회색 유리 상자의 영동대로 쪽 면에:
+#   은회색 금속 원 테(입면 폭을 거의 다 차지하고 지붕선에 닿는다), 원의 왼쪽 아래를 채운 붉은 가는 가로줄 무늬, 아래쪽을 가로지르는 붉은 띠, 유리에서 튀어나온 붉은 세로 상자 여덟 개,
+#   왼쪽 위의 짙은 붉은 상자와 흰 글자 'HDC', 오른쪽 가운데의 흰 네모 판, 원을 가로지르는 은색 막대 하나와 비스듬한 막대 둘, 왼쪽 위에서 지붕 위로 솟은 은색 날개.
+# 추정·단순화: 원의 지름과 중심 높이, 상자·판·막대의 자리(사진에서 원 지름에 견준 비율로 옮김), 줄무늬의 간격. 유리 몸체는 detail.py 의 일반 타워가 세운다.
+TOWER_STYLE['w85032872'] = dict(sty='curtain', g='#6f9299')
+_ib, _ig = _bp('w85032872')
+if _ib:
+    d = np.array(_toward_road(_ig, '영동대로'), float); d /= np.hypot(*d); e = np.array([-d[1], d[0]]); c0 = np.array(_ig.centroid.coords[0]); H = _ib['h']; fh = _face_hit(_ig, d)   # e = 길에서 볼 때 오른쪽
+    wide = max(abs(float((np.array(q) - c0) @ e)) for q in _ig.exterior.coords); R = min(wide * 1.0, H * .36); zc = H - R - 1.5; amb = MB()
+    sv, rd, rd2, wh = mat_flat('#b9bec2'), mat_flat('#b8323a'), mat_flat('#7a2a32'), mat_flat('#eceeee')
+    P3 = lambda u, v, o=1.0: (fh[0] + e[0] * u * R + d[0] * o, fh[1] + e[1] * u * R + d[1] * o, zc + v * R)
+    def panel(u, v, w, h, m, o, mt=None, uv=None):   # 입면에 나란한 판(가운데 u, v / 크기 w, h — 원 반지름에 견준 비율), 유리에서 o m 띄움
+        q = [P3(u - w / 2, v - h / 2, o), P3(u + w / 2, v - h / 2, o), P3(u + w / 2, v + h / 2, o), P3(u - w / 2, v + h / 2, o)]; amb.face(q, mt or m, uv)
+        b0 = [P3(u - w / 2, v - h / 2, .15), P3(u + w / 2, v - h / 2, .15), P3(u + w / 2, v + h / 2, .15), P3(u - w / 2, v + h / 2, .15)]
+        for k in range(4): amb.face([b0[k], b0[(k + 1) % 4], q[(k + 1) % 4], q[k]], m)
+    for v in np.arange(-.78, .12, .07):   # 붉은 가는 가로줄: 원의 왼쪽 아래
+        ul = -math.sqrt(max(0.0, .93 ** 2 - v * v)); ur = min(.18 - v * .55, math.sqrt(max(0.0, .9 ** 2 - v * v)))
+        if ur - ul > .15: beam(amb, P3(ul, v, .6), P3(ur, v, .6), .32, rd, .32)
+    beam(amb, P3(-.66, -.72, .9), P3(.62, -.72, .9), .5, rd, R * .075)                                   # 아래쪽 붉은 띠
+    for u, v in ((-.28, .70), (.14, .84), (.27, .22), (-.12, .13), (-.52, .0), (.02, -.28), (-.50, -.40), (.34, -.12)): panel(u, v, .085, .15, rd, 2.2)   # 튀어나온 붉은 세로 상자
+    pth, asp = sign_png('hdc', 'HDC', '#f1eeea', '#7a2a32', SERIF, pad=.3, mx=.35); panel(-.60, .60, .23, .23, rd2, 2.6, mat_tex(pth, 'sg_hdc'), [(0, 0), (1, 0), (1, 1), (0, 1)])
+    panel(.52, -.20, .28, .30, wh, 1.6)                                                                  # 흰 네모 판
+    beam(amb, P3(-.92, .16, 1.4), P3(.78, .34, 1.4), .7, sv, .9)                                          # 가로 막대
+    for a_, b_ in (((-.74, -.76), (.06, .22)), ((-.44, -.86), (.32, .16))): beam(amb, P3(*a_, 1.9), P3(*b_, 1.9), .6, sv, .7)   # 비스듬한 막대 둘
+    ring = [P3(math.cos(a), math.sin(a), 1.2) for a in np.linspace(0, 2 * math.pi, 49)]
+    for q0, q1 in zip(ring[:-1], ring[1:]): beam(amb, q0, q1, 1.5, sv, 1.3)                               # 은회색 원 테
+    m0, m1 = P3(-.97, .42, .4), P3(-.80, 0, .4); mt_ = (m1[0], m1[1], H + 15.0); mb_ = (m0[0], m0[1], H - 6.0)
+    amb.face([mb_, (m1[0], m1[1], H - 6.0), mt_, (m0[0], m0[1], H + 9.0)], sv)                             # 지붕 위로 솟은 날개
+    toonify(amb.build('ipark_art', 9792)); META[9792] = 'landmark:signs'
