@@ -4,7 +4,7 @@
 #   글라스타워: 흰 둥근 꼭대기 띠의 짙은 세리프 'GLASS TOWER' — 삼성역 사거리(북) 쪽에서 확인
 #   포스코센터 동관의 'posco' 는 detail.py 의 posco() 가 붙인다
 #   GS타워: 옥상 흰 원통 위를 두른 청록 띠의 흰 'GS' — 남·북 어느 쪽에서도 보인다
-#   현대백화점 무역센터점: 테헤란로 쪽 벽 동쪽 끝의 세로 전광판, 벽 위쪽의 'HYUNDAI'
+#   현대백화점 무역센터점: 테헤란로 쪽 벽 동쪽 끝의 세로 전광판, 벽 위쪽의 'THE HYUNDAI'(작은 THE + HYUNDAI 를 한 줄로 적었다)
 #   코엑스 아티움: 삼성역 사거리 쪽 모퉁이를 감싼 대형 전광판(케이팝 광장)
 #   코엑스: 영동대로 쪽 유리벽의 흰 'coex'(거리뷰에서는 앞 두 글자만 보였다)
 # 넣지 않은 곳: DB금융센터(동쪽 면 꼭대기에 흰 'DB' 가 있지만 접힌 유리면 모델에는 붙일 평면이 없다), 아셈타워·강남파이낸스센터·메리츠타워(글자를 읽지 못함),
@@ -82,7 +82,7 @@ if b:
     half = max(abs((np.array(q) - c) @ e_) for q in g.exterior.coords); H_ = b['h']; o1 = c + e_ * (half - 8.0)
     wall_strip(smb, g, dv, 7.0, H_ - 1.5, mat_tex(screen_png('hyundai', 96, 236, ['#b6573c', '#efbe3e', '#fdfdf3', '#c78169', '#984c2f', '#6ea8dd'], 11), 'sc_hyundai'), w=10.0, off=1.2, org=o1)
     wall_strip(smb, g, dv, 6.3, H_ - .8, mat_flat('#22272b'), w=11.0, off=.9, org=o1)
-    pth, asp = sign_png('hyundai', 'HYUNDAI', '#67523e', '#dbc197', SANS, track=.3); wall_strip(smb, g, dv, H_ - 6.4, H_ - 2.4, mat_tex(pth, 'sg_hyundai'), aspect=asp, off=.4, org=c - e_ * half * .45)
+    pth, asp = sign_png('thehyundai', 'THE HYUNDAI', '#67523e', '#dbc197', SANS, track=.22); wall_strip(smb, g, dv, H_ - 6.4, H_ - 2.4, mat_tex(pth, 'sg_hyundai'), aspect=asp, off=.4, org=c - e_ * half * .45)
 b, g = _bp('w74056387')    # 코엑스 아티움: 삼성역 사거리 쪽 모퉁이를 감싼 전광판(지붕선 위로 솟는다. 높이 22 m 는 거리뷰 비례로 잡은 추정)
 if b:
     st = next(s['xy'] for s in S['transit']['stations'] if s['name'] == '삼성'); c = g.centroid.coords[0]; dv = (st[0] - c[0], st[1] - c[1])

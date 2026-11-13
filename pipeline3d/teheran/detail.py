@@ -297,19 +297,41 @@ def diagrid_tex(glass, frame):
         for x in range(0, w, int(2 * RPPM)): d.line([(x, 0), (x, h)], fill=shade(glass, .92))
         for a, b_ in (((0, 0), (w, h)), ((w, 0), (0, h))): d.line([a, b_], fill=frame, width=int(.55 * RPPM))
     return _png(f'diag_{glass}', int(8 * RPPM), int(16 * RPPM), glass, draw), 8.0, 16.0
-TOWER_SIGNS = {}   # OSM id → (글자, 글자색, 바탕색, 글꼴): 거리뷰에서 읽은 꼭대기 간판(아래에서 채운다)
-TOWER_STYLE = {'w845329553': 'diagrid'}   # 선릉역 서쪽 테헤란로 북쪽 변의 사선 격자 유리 건물(거리뷰 확인)
+# 거리뷰에서 글자를 읽은 간판(2026-07 촬영분, 테헤란로를 150 m 간격으로 지나며 북쪽 변 건물 꼭대기를 확대해 본 276장을 문자 인식으로 추리고 눈으로 확인했다). 글꼴은 일반 글꼴이고 상표 도안은 그리지 않는다.
+#   OSM id → (글자, 글자색, 바탕색, 글꼴, 간판이 보는 길, 자리): crown 꼭대기 띠 / low 저층부 / vert 꼭대기 모서리의 세로 간판 / box 옥상 위에 세운 판
+TOWER_SIGNS = {
+    'w557469309': ('workflex', '#f6f5f0', '#3a3d42', SANS, '테헤란로', 'low'),            # 강남N타워 저층부의 흰 글자
+    'w561726162': ('KR TOWER', '#d0282e', '#5d8fbf', SANS, '테헤란로', 'vert'),           # 파란 유리 타워 꼭대기의 붉은 세로 글자
+    'w272052332': ('ARTNOUVEAU CITY HOTEL', '#c9a24c', '#3f4247', SERIF, '테헤란로', 'crown'),   # 역삼아르누보호텔: 짙은 꼭대기 띠의 금색 글자
+    'w703780988': ('FASTFIVE', '#3c3f44', '#b9b6ae', SANS, '테헤란로', 'crown'),          # 회색 석재 꼭대기 띠의 짙은 글자
+    'w800238998': ('HOTEL PEYTO', '#f6f5f0', '#9a9c9a', SANS, '테헤란로', 'crown'),       # 회색 호텔 꼭대기의 흰 글자
+    'w547175590': ('MEGABOX', '#5a4fb0', '#d8d2c4', SANS, '강남대로', 'low'),             # 강남역 스타플렉스 저층부 석재 벽의 보라색 글자
+    'w471384881': ('Canon', '#d0282e', '#f6f5f0', SANS, '테헤란로', 'box'),               # 캐논타워 옥상의 흰 판 + 붉은 글자
+    'w557469316': ('SPARKPLUS', '#5fa8c8', '#f0eee8', SANS, '테헤란로', 'crown'),         # 흰 석재 격자 건물 꼭대기
+}
+# 거리뷰에서 외장을 본 건물의 유형·색(나머지는 고정 난수). sty = 유형, g = 유리색, st = (석재색, 창색), spc = 띠 색
+TOWER_STYLE = {
+    'w845329553': dict(sty='diagrid'),                                   # 선릉역 서쪽 테헤란로 북쪽 변의 사선 격자 유리 건물
+    'w557469309': dict(sty='dark', g='#3f4a56'), 'w561726162': dict(sty='curtain', g='#5d8fbf'), 'w272052332': dict(sty='stone', st=('#55585d', '#c9ccd0')),
+    'w703780988': dict(sty='stone', st=('#b9b6ae', '#2f3d49')), 'w800238998': dict(sty='stone', st=('#cfcfca', '#34444f')), 'w547175590': dict(sty='fins', g='#5d8fbf', st=('#e6e4dc', '#4f7fb5')),
+    'w471384881': dict(sty='curtain', g='#5f9aa0'), 'w557469316': dict(sty='stone', st=('#f0eee8', '#3d5166')), 'w1078788212': dict(sty='band', g='#6f9cc0', spc='#d8c9ae'),   # 빅토리아오피스텔: 베이지 석재 띠 + 파란 띠창
+}
+def vsign_png(path):
+    """세로 간판: 가로 글자 그림을 시계 방향으로 돌린다(위에서 아래로 읽힌다)."""
+    p = path[:-4] + '_v.png'
+    if not os.path.exists(p): Image.open(path).rotate(-90, expand=True).save(p)
+    return p
 _tower_base = tower
 def tower(b, idx, cfg=None):
     if cfg is not None: return _tower_base(b, idx, cfg)
     poly = orient(P(b['rings']), 1.0)
     if poly.geom_type != 'Polygon' or poly.area < 20: return
     h = b['h']; r = random.Random(b['seed'] * 31 + 7); mb = MB(); c, ax_, Lx, Ly, mc = mrr_axes(poly); resi = b['kind'] in ('resi_tower', 'officetel', 'hotel', 'apartments', 'residential', 'dormitory')
-    sty = TOWER_STYLE.get(b['osm']) or (_pick(r, [('band', 5), ('stone', 3), ('curtain', 2)]) if resi else _pick(r, [('curtain', 30), ('band', 22), ('stone', 22), ('dark', 13), ('fins', 13)]))
-    flh = 3.3 if resi else r.choice([3.9, 4.0, 4.2]); g = r.choice(TGL); sw, sg = r.choice(TSTONE)
+    ov = TOWER_STYLE.get(b['osm'], {}); sty = ov.get('sty') or (_pick(r, [('band', 5), ('stone', 3), ('curtain', 2)]) if resi else _pick(r, [('curtain', 30), ('band', 22), ('stone', 22), ('dark', 13), ('fins', 13)]))
+    flh = 3.3 if resi else r.choice([3.9, 4.0, 4.2]); g = r.choice(TGL); sw, sg = r.choice(TSTONE); g = ov.get('g', g); sw, sg = ov.get('st', (sw, sg))
     if sty == 'curtain': sp = r.choice([.1, .14, .2]); path, tw, th = grid_tex(f'tc{g}{sp}{flh}', g, shade(g, .6), 1.5, flh, sp=sp); span = shade(g, .8)
-    elif sty == 'dark': g = r.choice(['#3f4a56', '#2f3a45', '#4b5661', '#3a4a4f']); path, tw, th = grid_tex(f'td{g}{flh}', g, shade(g, .55), 1.2, flh, sp=.1); span = shade(g, .8)
-    elif sty == 'band': spc = r.choice(['#e6e8e6', '#d8dcdc', '#cfc8ba', '#e9e2d0', '#c9cfd4']); path, tw, th = grid_tex(f'tb{g}{spc}{flh}', g, shade(g, .6), 1.6, flh, sp=.42, spc=spc); span = spc
+    elif sty == 'dark': g = ov.get('g') or r.choice(['#3f4a56', '#2f3a45', '#4b5661', '#3a4a4f']); path, tw, th = grid_tex(f'td{g}{flh}', g, shade(g, .55), 1.2, flh, sp=.1); span = shade(g, .8)
+    elif sty == 'band': spc = r.choice(['#e6e8e6', '#d8dcdc', '#cfc8ba', '#e9e2d0', '#c9cfd4']); spc = ov.get('spc', spc); path, tw, th = grid_tex(f'tb{g}{spc}{flh}', g, shade(g, .6), 1.6, flh, sp=.42, spc=spc); span = spc
     elif sty == 'diagrid': g = '#86a8c8'; path, tw, th = diagrid_tex(g, '#4a5560'); span = '#4a5560'
     elif sty == 'fins': path, tw, th = finwall_tex(f'tf{sw}{sg}{flh}', sw, sg, shade(sw, 1.06), bay=r.choice([1.8, 2.4]), flh=flh, finw=.5); span = sw
     else: path, tw, th = stone_tex(f'{sw}{sg}{flh}', sw, sg, flh=flh); span = sw
@@ -323,9 +345,31 @@ def tower(b, idx, cfg=None):
     if heli: heli_std(mb, c, ax_, up_[1], Ly, r)
     roof_std(mb, poly, h, up_[0] if up_ else None, up_[1] if up_ else h, heli, b['seed'])
     sg_ = TOWER_SIGNS.get(b['osm'])
-    if sg_:   # 꼭대기 간판 띠: 테헤란로 쪽(이 판의 카메라가 보는 남쪽 면)
-        pth, asp = sign_png('tw_' + b['osm'], sg_[0], sg_[1], sg_[2], sg_[3], track=.08); wall_strip(mb, poly, _toward_road(poly, sg_[4] if len(sg_) > 4 else '테헤란로'), h - 4.4, h - .5, mat_tex(pth, 'sg_' + b['osm']), aspect=asp, off=.4)
+    if sg_:
+        text, fg, bg, fonts, road, mode = sg_; pth, asp = sign_png('tw_' + b['osm'], text, fg, bg, fonts, track=.08); dv = np.array(_toward_road(poly, road), float); dv /= np.hypot(*dv); side = np.array([-dv[1], dv[0]])
+        if mode == 'vert': hs = min(18.0, h * .28); wall_strip(mb, poly, dv, h - 1.5 - hs, h - 1.5, mat_tex(vsign_png(pth), 'sgv_' + b['osm']), w=hs / asp, off=.4, org=np.array(c) + side * Ly * .22)
+        elif mode == 'low': wall_strip(mb, poly, dv, 13.0, 17.4, mat_tex(pth, 'sg_' + b['osm']), aspect=asp, off=.5)
+        elif mode == 'box': wall_strip(mb, poly, dv, h + .9, h + 5.6, mat_tex(pth, 'sg_' + b['osm']), aspect=asp, off=.12); wall_strip(mb, poly, dv, h + .5, h + 5.9, mat_flat('#c9cbc8'), w=4.7 * asp + .8, off=-.15)
+        else: wall_strip(mb, poly, dv, h - 4.4, h - .5, mat_tex(pth, 'sg_' + b['osm']), aspect=asp, off=.4)
     toonify(mb.build('b%d' % idx, idx))
+
+def ltower(b, idx, cfg):
+    """랜드마크 유리 타워: 공용 gtower 와 같은 입면(cfg)에, 일반 타워와 같은 옥상(바닥 색 구획·턱·냉각탑·기계실, 100 m 이상은 헬리패드)을 얹는다. 옥상 배치는 건물마다 맞춘 것이 아니다."""
+    poly = orient(P(b['rings']), 1.0)
+    if poly.geom_type != 'Polygon' or poly.area < 20: return
+    h = cfg.get('hroof') or b['h']; mb = MB(); LB = cfg.get('lobby', 8.0); r = random.Random(b['seed']); pc = cfg.get('spc') or shade(cfg['glass'], .8)
+    key = f"{cfg['glass']}_{cfg.get('spc')}_{cfg.get('sp', 0)}_{cfg.get('flh', 4.0)}_{cfg.get('bay', 1.5)}"
+    path, tw, th = grid_tex(key, cfg['glass'], cfg['line'], cfg.get('bay', 1.5), cfg.get('flh', 4.0), sp=cfg.get('sp', 0.0), spc=cfg.get('spc'), var=cfg.get('var', .04)); gm = mat_tex(path, 'g' + key)
+    if LB: _lobby(mb, poly, LB, cfg['glass'], pc, cfg['line'])
+    skin(mb, poly, LB, lambda x, y: h, gm, tw, th); capf(mb, poly, lambda x, y: h, mat_flat('#9a9c9e')); _parapet(mb, poly, h, pc)
+    if cfg.get('crownband'): cb = orient(poly.buffer(.3, join_style=2), 1.0); skin(mb, cb, h - cfg['crownband'], lambda x, y: h + 1.3, mat_flat(pc), 1, 1)
+    c, ax_, Lx, Ly, _ = mrr_axes(poly); core = poly.buffer(-max(3.0, 0.26 * Ly), join_style=2); up_ = None
+    if core.geom_type == 'Polygon' and core.area > 15: skin(mb, orient(core, 1.0), h, lambda x, y: h + 4.5, mat_flat('#a9aaa8'), 1, 1); capf(mb, core, lambda x, y: h + 4.5, mat_flat('#8c8e90')); up_ = (core, h + 4.5)
+    heli = h >= 100 and up_ is not None and core.area > 500
+    if heli: heli_std(mb, c, ax_, up_[1], Ly, r)
+    roof_std(mb, poly, h, up_[0] if up_ else None, up_[1] if up_ else h, heli, b['seed'])
+    toonify(mb.build('b%d' % idx, idx))
+LMB.update({k: ltower for k in ('trade', 'asem', 'parnas', 'gfc', 'samsung_e', 'samsung_c', 'samsung_l', 'cf_e', 'cf_w', 'meritz', 'glass')})   # GS타워는 옥상 원통 간판이 있어 그대로 둔다
 
 # ================= 포스코센터 =================
 def posco(b, idx, cfg):
