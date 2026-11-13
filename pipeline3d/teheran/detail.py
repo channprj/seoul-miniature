@@ -437,6 +437,106 @@ def ltower(b, idx, cfg):
     toonify(mb.build('b%d' % idx, idx))
 LMB.update({k: ltower for k in ('trade', 'asem', 'parnas', 'gfc', 'samsung_e', 'samsung_c', 'samsung_l', 'cf_e', 'cf_w', 'meritz', 'glass')})   # GS타워는 옥상 원통 간판이 있어 그대로 둔다
 
+# ================= 센터필드 =================
+# 네이버 지도 거리뷰(2026-07 촬영분: 테헤란로 쪽 웨스트 출입구, 언주로 쪽 이스트 출입구, 뒤쪽 진입로)와 위성 사진을 보고 만들었다.
+#   타워: 짙은 청회색 유리의 고운 격자, 면마다 세로 줄눈 둘로 세 구간, 가운데 구간에 기계층 루버 띠 두 줄, 지붕 위로 솟은 스크린 벽. 옥상(위성): 밝은 바닥, 태양광 판, 밝은 기계실, 큰 냉각탑 네 대.
+#   저층: 3층 높이의 맑은 유리 로비(안쪽 목재 벽이 비친다), 그 위 짙은 띠. 출입구: 짙고 얇은 캐노피, 캐노피 앞 가장자리에 세운 은백색 'CENTERFIELD' 글자, 유리 방풍실과 회전문, 양옆 여닫이문.
+#   웨스트(테헤란로 쪽): 출입구 양옆의 정원(생울타리·소나무), 깃대, 화분, 로비 위 띠의 'JOSUN PALACE'. 이스트(언주로 쪽): 계단 단, 화분과 돌 볼라드, 흰 고리 조형물, 지하로 내려가는 계단의 기운 유리 캐노피.
+# 추정·단순화: 회전문 수(웨스트 1, 이스트 2), 캐노피·정원의 치수, 줄눈·루버 띠의 높이 비율. 글자는 그림에서 보이도록 실제보다 크게 잡았다. 뒤쪽 저층 포디움은 OSM 에 윤곽이 없어 넣지 않았다.
+def _pine(mb, x, y, r, z=0.0):
+    mb.cyl((x, y, z), .16, 2.2 + r, mat_flat('#6b4b34'), n=6)
+    for k in range(3): mb.cyl((x, y, z + 2.0 + k * r * .5), r * (1.0 - k * .28), r * .38, mat_flat('#2f6b3d'), mat_flat('#3f7d4a'), n=8)
+def revolving_door(mb, p, d, z=0.0):
+    """회전문: 유리 원통(지름 2.8 m)의 양옆 곡면 벽 + 십자 날개 + 짙은 머리 테. d = 문이 향하는 쪽(드나드는 쪽은 뚫려 있다)."""
+    p = np.array(p, float); d = np.array(d, float) / np.hypot(*d); a0 = math.atan2(d[1], d[0]); gl, fr = mat_flat('#a9cdd6'), mat_flat('#2f3439'); R = 1.4
+    for side in (1, -1):
+        for k in range(6):
+            a1, a2 = a0 + side * math.radians(50 + 80 * k / 6), a0 + side * math.radians(50 + 80 * (k + 1) / 6)
+            q1, q2 = p + R * np.array([math.cos(a1), math.sin(a1)]), p + R * np.array([math.cos(a2), math.sin(a2)]); mb.face([(*q1, z), (*q2, z), (*q2, z + 2.5), (*q1, z + 2.5)], gl)
+    for a in (a0 + .5, a0 + .5 + math.pi / 2): obox(mb, p, np.array([math.cos(a), math.sin(a)]), R - .08, .04, z, z + 2.5, mat_flat('#e3ecee'))
+    mb.cyl((p[0], p[1], z + 2.5), R + .1, .4, fr, n=20)
+def _face_hit(poly, d):
+    c = np.array(poly.centroid.coords[0]); hit = LineString([c, c + d * 400]).intersection(poly.exterior)
+    q = hit if hit.geom_type == 'Point' else max([g for g in hit.geoms if g.geom_type == 'Point'], key=lambda g: (g.x - c[0]) * d[0] + (g.y - c[1]) * d[1]); return np.array([q.x, q.y])
+def cf_entrance(mb, poly, d, ndoor=1, z=0.0):
+    """출입구: 유리 방풍실 + 회전문 ndoor 개 + 양옆 여닫이문, 짙은 캐노피와 그 앞 가장자리의 'CENTERFIELD' 글자. 반환: 벽 위의 가운데 점, 밖에서 볼 때 오른쪽 방향."""
+    d = np.array(d, float); d /= np.hypot(*d); r = np.array([-d[1], d[0]]); w0 = _face_hit(poly, d); dk = mat_flat('#33383d')
+    obox(mb, w0 + d * 1.3, d, 1.3, 5.2, z, z + 3.5, mat_flat('#8fb5bf'), dk)
+    for k in range(ndoor): revolving_door(mb, w0 + d * 2.7 + r * ((k - (ndoor - 1) / 2) * 3.6), d, z)
+    for sv in (-1, 1): obox(mb, w0 + d * 2.65 + r * sv * (1.8 * ndoor + 1.5), d, .06, 1.0, z, z + 2.5, mat_flat('#c9dde2'), dk)
+    obox(mb, w0 + d * 2.9, d, 3.1, 8.0, z + 4.3, z + 4.75, dk, mat_flat('#454b51'))
+    for sv in (-1, 1): p_ = w0 + d * 5.6 + r * sv * 7.4; mb.cyl((p_[0], p_[1], z), .14, 4.3, mat_flat('#8d9296'), n=8)
+    pth, asp = sign_png('centerfield', 'CENTERFIELD', '#f1f3f3', '#33383d', SANS, track=.16, pad=.16); hh = 1.5; w = hh * asp; m0 = w0 + d * 6.02; a_, b_ = m0 - r * w / 2, m0 + r * w / 2
+    mb.face([(*a_, z + 4.75), (*b_, z + 4.75), (*b_, z + 4.75 + hh), (*a_, z + 4.75 + hh)], mat_tex(pth, 'sg_centerfield'), [(0, 0), (1, 0), (1, 1), (0, 1)])
+    return w0, r
+def _bowl(mb, q, z=0.0): mb.cyl((q[0], q[1], z), .95, .55, mat_flat('#3a3d42'), mat_flat('#c9a13a'), n=12); mb.cyl((q[0], q[1], z + .55), .6, .25, mat_flat('#d9482e'), mat_flat('#e8b62c'), n=8)
+def centerfield(b, idx, cfg):
+    poly = orient(P(b['rings']), 1.0); H = b['h']; mb = MB(); east = b['osm'] == 'w836753661'; LB = 13.5; c, ax_, Lx, Ly, _ = mrr_axes(poly); c = np.array(c); nv = np.array([-ax_[1], ax_[0]])
+    def lobby(d_):
+        W_, H_ = 768, 432   # 24 × 13.5 m: 1.5 m 유리 칸, 4.5 m 마다 가로대, 몇 칸에는 안쪽 목재 벽
+        for x in range(0, W_, 48):
+            d_.rectangle([x, 0, x + 47, H_], fill='#4f6470')
+            if x // 48 in (6, 7, 8, 9): d_.rectangle([x, int(H_ * .6), x + 47, H_ - 8], fill='#b98a52')
+            d_.rectangle([x, 0, x + 3, H_], fill='#20262c')
+        for y in (0, 144, 288): d_.rectangle([0, y, W_, y + 4], fill='#20262c')
+        d_.rectangle([0, H_ - 8, W_, H_], fill='#6f747a')
+    skin(mb, poly, 0.0, lambda x, y: LB, mat_tex(_png('cf_lobby', 768, 432, '#4f6470', lobby), 'cf_lobby'), 24.0, LB)
+    cn = orient(poly.buffer(.5, join_style=2), 1.0); skin(mb, cn, LB, lambda x, y: LB + 1.0, mat_flat('#3a4047'), 1, 1); capf(mb, cn, lambda x, y: LB + 1.0, mat_flat('#4a5057'))
+    path, tw, th = grid_tex('cf', cfg['glass'], cfg['line'], 1.0, 4.3, sp=.08); skin(mb, poly, LB + 1.0, lambda x, y: H, mat_tex(path, 'gcf'), tw, th); cc = list(poly.exterior.coords)
+    for p0, p1 in zip(cc[:-1], cc[1:]):
+        p0, p1 = np.array(p0), np.array(p1); L = float(np.hypot(*(p1 - p0)))
+        if L < 18: continue
+        e = (p1 - p0) / L; n_ = np.array([e[1], -e[0]])
+        for t in (1 / 3, 2 / 3): obox(mb, p0 + e * L * t + n_ * .12, e, .28, .2, LB + 1.0, H, mat_flat('#232a31'))                                  # 면을 셋으로 나누는 세로 줄눈
+        for zf in (.56, .8): obox(mb, (p0 + p1) / 2 + n_ * .1, e, L / 6 - .3, .16, H * zf, H * zf + 4.3, mat_flat('#262c33'))                      # 기계층 루버 띠(가운데 구간)
+    crown = _png('cf_crown', 48, 96, cfg['glass'], lambda d_: [d_.rectangle([x, 0, x + 5, 96], fill='#2b3540') for x in range(0, 48, 12)])
+    skin(mb, poly, H, lambda x, y: H + 5.0, mat_tex(crown, 'cf_crown'), 2.0, 5.0); inner = poly.buffer(-.6, join_style=2)                               # 지붕 위 스크린 벽
+    for t in shapely.constrained_delaunay_triangles(poly.difference(inner)).geoms: mb.face([(x, y, H + 5.0) for x, y in list(orient(t, 1.0).exterior.coords)[:-1]], mat_flat('#e6e9ea'))
+    skin(mb, orient(inner, -1.0), H, lambda x, y: H + 5.0, mat_flat('#7d8790'), 1, 1); capf(mb, inner, lambda x, y: H, mat_flat(cfg.get('deck', '#d0d2d3'))); okr = inner.buffer(-2.0)
+    obox(mb, c - ax_ * Lx * .1, ax_, Lx * .16, Ly * .22, H, H + 4.0, mat_flat('#c9cbc8'), mat_flat('#d9dbd9'))                                           # 밝은 기계실
+    for k in range(4): _cooler(mb, c - ax_ * Lx * .36 + nv * ((k - 1.5) * 5.4), ax_, H + .05, 2.2, 2.4)                                                  # 큰 냉각탑 네 대
+    for u in np.arange(Lx * .13, Lx * .44, 4.5):                                                                                                         # 태양광 판
+        for v in np.arange(-Ly * .42, Ly * .42, 2.2):
+            q = c + ax_ * u + nv * v
+            if okr.contains(Point(*q).buffer(1.9)): obox(mb, q, ax_, 2.0, .85, H + .12, H + .5, mat_flat('#2f4a78'), mat_flat('#3a5a92'))
+    d = np.array(_toward_road(poly, '언주로' if east else '테헤란로'), float); d /= np.hypot(*d)
+    clear = lambda q: not poly.buffer(1.0).contains(Point(*q)) and all(ln.distance(Point(*q)) > r_['w'] / 2 + 3.5 for ln, r_ in _DRV if ln.distance(Point(*q)) < 40)
+    if east:   # 언주로 쪽: 계단 단 위의 출입구(회전문 둘), 화분·볼라드, 고리 조형물, 지하 계단의 기운 유리 캐노피
+        w0 = _face_hit(poly, d); r = np.array([-d[1], d[0]])
+        for k in range(3): obox(mb, w0 + d * (4.6 + k * .45), d, 4.6 + k * .45, 10.0 + k * .45, 0.0, .45 - k * .15, mat_flat('#bdb9b0'), mat_flat('#cfccc4'))
+        cf_entrance(mb, poly, d, 2, .45)
+        for sv in (-1.5, -.5, .5, 1.5):
+            q = w0 + d * 11.5 + r * sv * 4.2
+            if clear(q): _bowl(mb, q) if abs(sv) < 1 else obox(mb, q, d, .3, .3, 0.0, .55, mat_flat('#c9c5ba'), mat_flat('#e8b62c'))
+        sc = w0 + d * 13.0 - r * 19.0
+        if clear(sc):
+            mb.cyl((sc[0], sc[1], 0), 2.3, 1.5, mat_flat('#e9e9e6'), mat_flat('#f4f4f1'), n=24); pts = [(*(sc + r * 1.9 * math.cos(a)), 3.7 + 2.1 * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 15)]
+            for q0, q1 in zip(pts[:-1], pts[1:]): beam(mb, q0, q1, .42, mat_flat('#f1f1ee'))
+        g0 = w0 - r * 13.5; A = [g0 + d * 1.0 - r * 2.6, g0 + d * 1.0 + r * 2.6, g0 + d * 13.0 + r * 2.6, g0 + d * 13.0 - r * 2.6]; za, zb = 4.2, 1.1; gl = mat_flat('#a9d0d6'); fr = mat_flat('#eef2f2')
+        mb.face([(*A[0], za), (*A[1], za), (*A[2], zb), (*A[3], zb)], gl)
+        for i_, j_, z0_, z1_ in ((0, 3, za, zb), (1, 2, za, zb)): mb.face([(*A[i_], 0), (*A[j_], 0), (*A[j_], z1_), (*A[i_], z0_)], gl); beam(mb, (*A[i_], z0_), (*A[j_], z1_), .22, fr)
+        for t in np.linspace(0, 1, 5): q0, q1 = A[0] + (A[3] - A[0]) * t, A[1] + (A[2] - A[1]) * t; zz = za + (zb - za) * t; beam(mb, (*q0, zz + .03), (*q1, zz + .03), .16, fr)
+    else:      # 테헤란로 쪽: 출입구(회전문 하나) 양옆의 정원, 깃대, 화분, 로비 위 띠의 호텔 이름
+        w0, r = cf_entrance(mb, poly, d, 1); Wd = max(abs(float((np.array(q) - c) @ r)) for q in poly.exterior.coords); rnd = random.Random(b['seed'])
+        for sv in (-1, 1):
+            for u in np.arange(7.0, Wd + 4.0, 3.4):
+                for v in (4.0, 7.4, 10.8, 14.2):
+                    q = w0 + r * sv * u + d * v
+                    if not clear(q): continue
+                    obox(mb, q, d, 1.55, 1.55, 0.0, .12, mat_flat('#6aa84e'))
+                    if rnd.random() < .7: obox(mb, q, d, rnd.uniform(.9, 1.4), rnd.uniform(.9, 1.4), .12, rnd.uniform(.6, .95), mat_flat('#3f7d3a'), mat_flat('#4f8f3f'))      # 다듬은 생울타리
+                    elif rnd.random() < .7: _pine(mb, q[0], q[1], rnd.uniform(1.3, 1.9), .12)
+            q = w0 + d * 9.0 + r * sv * 3.6
+            if clear(q): _bowl(mb, q)
+        fp_ = w0 + d * 14.5 + r * 5.5
+        if clear(fp_):   # 깃대와 태극기
+            mb.cyl((fp_[0], fp_[1], 0), .09, 9.5, mat_flat('#c9cccd'), n=8)
+            def flag(d_): d_.pieslice([20, 8, 44, 32], 180, 360, fill='#c8102e'); d_.pieslice([20, 8, 44, 32], 0, 180, fill='#0047a0')
+            mb.face([(*fp_, 7.3), (*(fp_ + r * 2.0), 7.3), (*(fp_ + r * 2.0), 8.7), (*fp_, 8.7)], mat_tex(_png('taegeuk', 64, 40, '#ffffff', flag), 'taegeuk'), [(0, 0), (1, 0), (1, 1), (0, 1)])
+        pth, asp = sign_png('josun', 'JOSUN PALACE', '#e9e4d6', '#3a4047', SERIF, track=.2); wall_strip(mb, poly, d, LB - .15, LB + 1.15, mat_tex(pth, 'sg_josun'), aspect=asp, off=.56, org=c - r * Wd * .45)
+    toonify(mb.build('b%d' % idx, idx))
+LMB.update(cf_e=centerfield, cf_w=centerfield)
+
 # ================= 포스코센터 =================
 def posco(b, idx, cfg):
     """포스코센터(거리뷰 대조: 테헤란로 정면, 동·서·남쪽). 청록 유리 타워 두 동(동관이 높다) 사이에 낮은 유리 아트리움이 있고, 타워마다 아트리움 쪽 앞 모서리에 회색 석재 세로 기둥(코어)이 지붕 위까지 오른다.
