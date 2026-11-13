@@ -399,6 +399,7 @@ TOWER_SIGNS = {
 }
 # 거리뷰에서 외장을 본 건물의 유형·색(나머지는 고정 난수). sty = 유형, g = 유리색, st = (석재색, 창색), spc = 띠 색
 TOWER_STYLE = {
+    'r19640833': dict(sty='stone', st=('#eceae4', '#27323b')),           # 부띠크모나코: 흰 격자 외벽에 짙은 창(군데군데 비워 둔 공중 정원은 만들지 않았다)
     'w924182862': dict(sty='band', g='#8fa9bd', spc='#c3ced6'),          # 그랜드 인터컨티넨탈 서울 파르나스: 은청색 반사 유리에 층마다 밝은 가로 띠
     'w845329553': dict(sty='diagrid'),                                   # 선릉역 서쪽 테헤란로 북쪽 변의 사선 격자 유리 건물
     'w557469309': dict(sty='dark', g='#3f4a56'), 'w561726162': dict(sty='curtain', g='#5d8fbf'), 'w272052332': dict(sty='stone', st=('#55585d', '#c9ccd0')),
@@ -427,12 +428,48 @@ TOWER_ROOF = dict(x.split(':') for x in (
     'w561726157:nL w562011029:nL w976267547:nD '
 ).split())
 HPAD = {'g': ('#4f9a78', '#f6f6f1'), 'w': ('#8d949c', '#f1f1ec'), 'p': ('#d9c2b8', '#c8402e'), 'k': ('#5a5048', '#f1f1ec')}; TDECK = {'G': '#5aa583', 'L': '#c9cbcc', 'D': '#6a6d70', 'T': '#b79a78', 'B': '#4f7fb5'}
+# 58 m 이상 타워의 입면(네이버 지도 거리뷰에서 건물마다 눈으로 읽음). TOWER_FACE 는 'OSM id:부호' 를 이어 쓴 표이고 아래에서 TOWER_STYLE 꼴로 푼다.
+#   첫 글자 = 유형: C 유리 커튼월, B 띠창(유리 띠 + 층 띠), S 석재·패널 격자에 네모 창, D 짙은 유리, F 세로 핀
+#   둘째 글자 = 유리색: b 파랑, t 청록, g 청회색, k 짙은 남회색, s 밝은 은청색, n 초록, w 브론즈
+#   셋째 글자(B·S·F) = 층 띠·석재색: W 흰색, G 회색, E 베이지, K 짙은 회색, R 붉은 벽돌색, N 갈색
+FGLASS = {'b': '#5d8fbf', 't': '#5f9aa0', 'g': '#6c8197', 'k': '#3f4a56', 's': '#9fb4c4', 'n': '#5f9a7a', 'w': '#7a6a58'}
+FSTONE = {'W': '#eceae4', 'G': '#b9b6ae', 'E': '#d8c9ae', 'K': '#55585d', 'R': '#9a5a45', 'N': '#7b6654'}
+FSTY = {'C': 'curtain', 'B': 'band', 'S': 'stone', 'D': 'dark', 'F': 'fins'}
+TOWER_FACE = (   # 212채(2026-11-13 촬영분을 건물마다 봄). 나무·앞 건물에 가려 못 본 타워는 고정 난수 그대로다
+    'w64988494:BsW w182197532:BsE w182197533:BsE w182197534:BsE w192743522:BgW w468950539:BsW w468950540:BsW w888051965:BgG w888051962:Cn w888051964:Cg w182197535:SkE w504227059:Cs w888051971:SgE '
+    'w561726189:Dk w888051961:BgG w606127885:SgW w74056398:SgG r19640833:SkW w74056381:SgE w557469309:Ct w562011093:Dk w74056393:SgW w468950546:BbW w664427650:SbW w561726140:SkN r19639969:SgG '
+    'w85032870:Ct w1432287934:SgE w1431190867:SgG w804792360:SgW w561457410:Dk w1436266721:Cg w194455125:SgW r19640542:BsW w169235087:Ct w272052333:Ct w562011017:BtW w888051969:Cb w504509913:SgG '
+    'w804474442:SkK w1432287935:Cg w804476135:SgG w85032872:Cb w1431826750:Dk w804792364:SgW w1078790203:Cb w703780986:SkW w561726183:BtW w606127881:Cw w606127882:SkN w1078790207:Ct '
+    'w1435117236:FgG w557469327:BgW w871868156:Cs w562011058:SgE w562011063:Ct w562011095:Dk w358294591:SgE w804792735:SkR w800239005:SkW w468926906:SgW w182129181:SgG w417627680:BgW '
+    'w1359388903:SgW w619975346:BsW w703780984:FgG w862420979:Cb w1436264005:Cw w845329550:FbG w1078790206:Ct w1078790201:SgG w703651991:FbG w800180976:Ct w356427527:BgN w561726177:BgE '
+    'w561726184:Cb w562011038:Ct w804476136:FgW w1078788206:SgG w1078788207:SgG w1078790208:BgG w471384885:SkK w703780985:Dk w379232123:BkW w272052331:SbG w272052332:Dk w272052334:SgG '
+    'w804792362:BsW w804792734:SgE w1434861702:SgE r19639970:SgG w379232109:Ct w555228273:Cg w1290908893:SkE w379232111:SgE w468926366:SgW w561457400:Cb w561726138:Cb w845329553:BbG w539224760:Cg '
+    'w562011056:SgE w1078790202:SbG w478771467:BtE w801056147:SgE w1432576160:SgG w800180989:SkR w452819195:SgW w803330421:Cb w561726136:Cb w804791463:SgW w800239002:BgW w194455123:SgG '
+    'w630058453:Cb w800177552:Dk w803330477:SgE w800177554:Dk w557469314:BbW w1078790209:FbW w358294592:SgE w804791466:SkR w1084053296:BgW w541695113:BtW w561457411:Dk w1078790205:Dk '
+    'w803334060:SgW w804792358:SgW w845290622:SgE w164655841:SkK w705120357:Cg w562011065:Ct w562011100:SgG w1201241445:SgE w804791467:Cg w540202621:Dk w547175590:SgW w557469345:Cb w606127873:BgW '
+    'w562010976:Dk w1078790212:SgW w1434825112:BgW w305923846:SgG w547174121:Cb w504490016:Cg w871868157:BbW w804475779:Cs w1435216628:Cb w358294564:Dk w672465729:StG w561457392:Dk '
+    'w1434833756:SkR w804792732:BtW w804792733:BtG w803330420:SgG w194455161:SkE w804788008:Cb w845284439:BbW w845290621:SgW w1435039968:SgW w557469329:SgW w471384887:SgG w561726181:BbW '
+    'w1078790213:BgW w804791469:SgE w703780987:SgG w703780990:Ct w801056149:SgW w1435211136:SkE w229258834:Dk w562011054:Cb w1359388920:Cb w468926904:Cb w313514627:BgW w562011026:SgG '
+    'w1078790211:Cb w1065771475:Cs w804792365:SgG w804792367:Cg w1434835336:SgG w561726193:SgW w1434564990:SgW w703780989:StG w801056145:SgE w557469343:FtE w871868165:FgW w1434619328:BgW '
+    'w1351850725:SgE w672465728:Cg w562011047:Dk w803334055:SbG w804792359:SgW w804792731:Ct w1435082856:SkW w803330480:Ct r8833641:SgE w540202620:Cg w1065771472:BtW w562011066:SgW w975339870:SgE '
+    'w1419310662:SgW w1434876246:SbG w1435091428:Cg w800180988:Cg w800186284:SkK w1065771478:SkW w679004823:BbW w1084058219:Cw w1434876248:BsW w475633209:Ct w555228277:Ct w561726157:BtW '
+    'w562011029:BgG w976267547:SkK '
+)
+def _face_decode():
+    for x in TOWER_FACE.split():
+        o, c = x.split(':')
+        if o in TOWER_STYLE: continue
+        g = FGLASS[c[1]]; d_ = dict(sty=FSTY[c[0]], g=g)
+        if c[0] == 'B': d_['spc'] = FSTONE[c[2]]
+        if c[0] in 'SF': d_['st'] = (FSTONE[c[2]], shade(g, .62))
+        TOWER_STYLE[o] = d_
 def vsign_png(path):
     """세로 간판: 가로 글자 그림을 시계 방향으로 돌린다(위에서 아래로 읽힌다)."""
     p = path[:-4] + '_v.png'
     if not os.path.exists(p): Image.open(path).rotate(-90, expand=True).save(p)
     return p
 _tower_base = tower
+_face_decode()
 def tower(b, idx, cfg=None):
     if cfg is not None: return _tower_base(b, idx, cfg)
     sp = globals().get('SPECIAL', {}).get(b['osm'])
