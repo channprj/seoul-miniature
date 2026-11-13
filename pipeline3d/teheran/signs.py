@@ -2,7 +2,7 @@
 # 네이버 지도 거리뷰(2026-07 촬영분)에서 글자를 읽을 수 있었던 간판만 넣었다. 사진은 저장소에 넣지 않았다.
 #   파르나스타워: 꼭대기 짙은 띠의 흰 세리프 'PARNAS' — 남·동·북쪽에서 본 면마다 있어 네 면 모두에 둔다
 #   글라스타워: 흰 둥근 꼭대기 띠의 짙은 세리프 'GLASS TOWER' — 삼성역 사거리(북) 쪽에서 확인
-#   포스코센터 동관: 꼭대기의 흰 소문자 'posco' — 테헤란로(북) 쪽에서 확인
+#   포스코센터 동관의 'posco' 는 detail.py 의 posco() 가 붙인다
 #   GS타워: 옥상 흰 원통 위를 두른 청록 띠의 흰 'GS' — 남·북 어느 쪽에서도 보인다
 #   현대백화점 무역센터점: 테헤란로 쪽 벽 동쪽 끝의 세로 전광판, 벽 위쪽의 'HYUNDAI'
 #   코엑스 아티움: 삼성역 사거리 쪽 모퉁이를 감싼 대형 전광판(케이팝 광장)
@@ -71,9 +71,6 @@ b, g = _bp('w85032873')    # 글라스타워: 삼성역 사거리 쪽 둥근 꼭
 if b:
     pth, asp = sign_png('glass', 'GLASS TOWER', '#2f3438', '#e9ecec', SERIF, track=.2); st = next(s['xy'] for s in S['transit']['stations'] if s['name'] == '삼성'); c = g.centroid.coords[0]
     wall_strip(smb, g, (st[0] - c[0], st[1] - c[1]), b['h'] - 5.2, b['h'] - .9, mat_tex(pth, 'sg_glass'), aspect=asp, off=.45)
-b, g = _bp('w840263996')   # 포스코센터 동관: 테헤란로 쪽
-if b:
-    pth, asp = sign_png('posco', 'posco', '#f6f5f0', '#3f6a6d', SANS, track=.06); wall_strip(smb, g, _toward_road(g, '테헤란로'), b['h'] - 6.0, b['h'] - 1.2, mat_tex(pth, 'sg_posco'), aspect=asp, off=.45)
 b, g = _bp('w562011101')   # GS타워: 옥상 동쪽 끝의 흰 원통 + 청록 띠의 'GS'(세 번 되풀이해 어느 쪽에서도 읽힌다)
 if b:
     _c, ax_, Lx_, _ly, _ = mrr_axes(g); e_ = ax_ if ax_[0] > 0 else -ax_; cc = np.array(_c) + e_ * Lx_ * .2; H_ = b['h']; R_ = 5.6

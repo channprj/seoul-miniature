@@ -184,6 +184,67 @@ _new = [(1162.0, 534.5, 2.2), (1165.5, 525.0, 2.2), (1202.0, 497.0, 2.6), (1171.
 S['trees'] += [[x, y, r, 0] for x, y, r in _new]
 print('samseong plaza: pave', round(pave.area), 'yard', round(yard.area), 'green', round(green.area), 'trees +', len(_new))
 
+# ---- 아파트 단지: 동을 단지(landuse=residential 면)로 묶고, 단지 마당(정원·지상 주차장·둘레 화단)과 나무, 출입구 자리를 더한다 ----
+# 거리뷰(2018–2026 촬영분)에서 본 것: 2000년대 이후 단지(도곡렉슬·힐스테이트·래미안·e편한세상)는 지상이 정원이고 차는 지하로 들어간다. 1970–80년대 단지(은마·개포우성)는 동 앞이 지상 주차장이고
+# 둘레와 동 옆에 큰 나무가 줄지어 있다. 단지의 연대는 층수 중앙값으로 가른다(15층 이하 = 옛 단지, 추정). 마당 배치(화단 폭, 주차 띠 자리)는 규칙으로 만든 것이라 실제 조경과 다르다.
+import re, shapely
+B = S['buildings']; APTK = ('apartments', 'residential', 'dormitory', 'officetel')
+bpoly = [Polygon(b['rings'][0]).buffer(0) for b in B]; btree = STRtree(bpoly)
+DRV = [(LineString(r['pts']), r) for r in S['roads'] if r['cls'] in ('major', 'minor') and not r['tunnel'] and not r['bridge']]; drt = STRtree([l for l, _ in DRV])
+for b, bp in zip(B, bpoly):   # 건물이 면한 길(12 m 안): 큰길가는 상가·사무실, 이면도로는 빌라·주택으로 꾸민다(lm_build 의 detail.py)
+    k = drt.nearest(bp); b['rd'] = (DRV[k][1]['cls'] if DRV[k][0].distance(bp) - DRV[k][1]['w'] / 2 < 12 else '')
+    m = re.search(r'(\d{1,4}|[A-Z])\s*동?$', b['name']); b['no'] = m.group(1) if m else ''
+res = [(Polygon(a['rings'][0], a['rings'][1:]).buffer(0), a['name']) for a in S['areas'].get('resi_land', [])]; rtree = STRtree([q for q, _ in res]) if res else None; grp = {}
+for b, bp in zip(B, bpoly):
+    if b['kind'] not in APTK or b['lv'] < 6 or rtree is None: continue
+    pt = bp.representative_point()
+    for k in rtree.query(pt):
+        if res[k][0].contains(pt): grp.setdefault(int(k), []).append(b); break
+roadsurf = unary_union([l.buffer(r['w'] / 2 + .8, cap_style=2) for l, r in DRV]); footsurf = unary_union([LineString(r['pts']).buffer(r['w'] / 2 + .3, cap_style=2) for r in S['roads'] if r['cls'] == 'foot' and not r['tunnel']] + [Point(0, 0).buffer(.01)])
+hard = unary_union([Polygon(a['rings'][0]).buffer(0) for k in ('pitch', 'play', 'parking', 'pond', 'plaza') for a in S['areas'].get(k, [])] + [Point(0, 0).buffer(.01)])
+def _add(key, g, nm):
+    for q in (g.geoms if hasattr(g, 'geoms') else [g]):
+        if q.geom_type == 'Polygon' and q.area > 12 and (r_ := rings(q, .2)): S['areas'].setdefault(key, []).append({'rings': r_, 'name': nm, 'sport': ''})
+S['complexes'] = []; tkey = {(round(t[0] / 2.0), round(t[1] / 2.0)) for t in S['trees']}; nt0 = len(S['trees'])
+for k, bs in sorted(grp.items()):
+    p, nm = res[k]
+    if len(bs) < 3 or not p.intersects(BOARD.buffer(60)): continue
+    lv = float(np.median([b['lv'] for b in bs])); era = 'old' if lv <= 15 else 'new'; ci = len(S['complexes']); seed = zlib.crc32((nm or str(k)).encode()) % 100000
+    for b in bs: b['cx'] = ci
+    ins = [bpoly[j] for j in btree.query(p) if bpoly[j].intersects(p)]; apron = unary_union([q.buffer(2.6 if era == 'new' else 1.6, join_style=2) for q in ins])
+    yard = p.buffer(-1.2).difference(roadsurf).difference(hard)
+    if era == 'new': green = yard.difference(apron); lots = None                     # 지상은 정원(동 둘레 2.6 m 만 포장)
+    else:
+        strips = []                                                                    # 동 남쪽 앞의 주차 띠(두 줄 주차 + 통로 = 폭 17 m)
+        for b in bs:
+            q = Polygon(b['rings'][0]); mc = np.array(q.minimum_rotated_rectangle.exterior.coords); e0, e1 = mc[1] - mc[0], mc[2] - mc[1]
+            if np.hypot(*e0) < np.hypot(*e1): e0, e1 = e1, e0
+            Lx_, Ly_ = np.hypot(*e0), np.hypot(*e1); ax = e0 / Lx_; nv = np.array([-ax[1], ax[0]]); nv = nv if nv[1] < 0 else -nv; c = np.array(q.centroid.coords[0]) + nv * (Ly_ / 2 + 4.0 + 8.5)
+            strips.append(Polygon([tuple(c + ax * su * (Lx_ / 2 - 1) + nv * sv * 8.5) for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]))
+        lots = []; used = apron
+        for st in strips:
+            g = st.intersection(yard).difference(used)
+            g = max(g.geoms, key=lambda q: q.area) if hasattr(g, 'geoms') and len(g.geoms) else g
+            if g.geom_type == 'Polygon' and g.area > 300: lots.append(g); used = used.union(g.buffer(1.0))
+        green = yard.difference(p.buffer(-6.0)).union(unary_union([q.buffer(5.0, join_style=2) for q in ins]).intersection(yard)).difference(apron).difference(unary_union(lots + [Point(0, 0).buffer(.01)]).buffer(.5))   # 둘레 화단 띠 + 동 둘레 화단
+        for g in lots: _add('parking', g, nm + ' 주차장')
+    green = green.buffer(-.4).buffer(.4); _add('grass', green, nm + ' 정원')
+    if not green.is_empty:   # 조경수: 정원에 촘촘히(옛 단지는 큰 나무)
+        x0, y0, x1, y1 = green.bounds; n = int(green.area / (40 if era == 'new' else 34)); rg = np.random.default_rng(seed); xs, ys = rg.uniform(x0, x1, n * 3), rg.uniform(y0, y1, n * 3)
+        ok = shapely.contains_xy(green.buffer(-1.2), xs, ys) & ~shapely.contains_xy(footsurf, xs, ys)
+        for x, y, rr in zip(xs[ok][:n], ys[ok][:n], rg.uniform(2.3, 3.6 if era == 'new' else 4.4, int(ok.sum()))[:n]):
+            kk = (round(x / 2.0), round(y / 2.0))
+            if kk not in tkey: tkey.add(kk); S['trees'].append([round(float(x), 2), round(float(y), 2), round(float(rr), 2), 0])
+    gates = []   # 차도가 단지 경계를 넘는 자리: 담을 끊고, 넓은 길 둘에는 문주를 세운다
+    ring_ = p.buffer(-.8).exterior if p.buffer(-.8).geom_type == 'Polygon' else p.exterior
+    for j in drt.query(ring_):
+        l, r = DRV[j]; x_ = l.intersection(ring_)
+        for q in ([x_] if x_.geom_type == 'Point' else [g for g in getattr(x_, 'geoms', []) if g.geom_type == 'Point']):
+            s_ = l.project(q); a_, b_ = l.interpolate(max(0, s_ - 2)), l.interpolate(min(l.length, s_ + 2)); gates.append([round(q.x, 2), round(q.y, 2), round(math.atan2(b_.y - a_.y, b_.x - a_.x), 3), r['w'], 0])
+    for g in sorted(gates, key=lambda g: -g[3])[:2]: g[4] = 1
+    S['complexes'].append({'name': nm, 'rings': rings(p, .3), 'era': era, 'seed': seed, 'lv': lv, 'n': len(bs), 'gates': gates})
+print('complexes', len(S['complexes']), 'old', sum(c['era'] == 'old' for c in S['complexes']), 'apartments in complexes', sum(1 for b in B if 'cx' in b), 'garden trees +', len(S['trees']) - nt0)
+
 S['extra'] = 'teheran/prep_extra.py'
 json.dump(S, open('scene.json', 'w'), separators=(',', ':'))
 print('wrote scene.json')
