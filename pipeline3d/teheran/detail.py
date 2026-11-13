@@ -113,6 +113,9 @@ def gableroof(mb, poly, z, col, wallhex, over=.5):
     beam(mb, P4(-hx, 0, rz + .08), P4(hx, 0, rz + .08), .35, mat_flat(shade(col, .75)))   # 용마루
 DECKC = ['#5aa583', '#63ad8c', '#58a17d', '#5aa583', '#a5a39c', '#a5a39c', '#8f9296', '#4a4d55', '#b0604a']
 TILEC = ['#c2603f', '#b4664a', '#8a5a44', '#5a6c7d', '#4d5258', '#4f7f6a']
+ROOFC = {'green': ['#5aa583', '#63ad8c', '#58a17d', '#4f9a78'], 'grey': ['#a5a39c', '#9a9c9e', '#b0aea6'], 'light': ['#d9d9d4', '#e6e4dc', '#cfd2d2'], 'dark': ['#5a5d61', '#4a4d55', '#6a6d70'],
+         'tile': ['#b0604a', '#a8553f'], 'blue': ['#4f7fb5', '#5b8fc7'], 'tan': ['#b79a78', '#a88a6a', '#c2a682']}   # 지붕 종류별 평지붕 바닥 색(종류만 위성 화면에서 읽고, 색은 이 표에서 고른다)
+PITCHC = {'tile': ['#c2603f', '#b4664a', '#a8553f', '#8a5a44'], 'dark': ['#4d5258', '#5a4a44'], 'grey': ['#6f7478', '#7d8286'], 'blue': ['#5a6c7d', '#4f7fb5'], 'tan': ['#8a5a44', '#9a6a4e']}
 VILLA = [('granite', 14), ('granite_w', 12), ('brick_r', 15), ('brick_d', 13), ('brick_b', 8), ('brick_y', 5), ('brick_k', 6), ('tile_w', 9), ('tile_k', 5), ('stucco_w', 5), ('stucco_y', 3), ('concrete', 3), ('board_c', 2)]
 SHOPB = [('granite', 14), ('granite_w', 12), ('granite_d', 10), ('metal_k', 12), ('curtain', 18), ('tile_w', 12), ('concrete', 8), ('brick_k', 8), ('brick_r', 6)]
 NBMIX = {   # 동네별 경향(prep_extra.py 의 NBH)
@@ -147,13 +150,15 @@ def modern(bd, idx):
     if b0.get('yard'):   # 단독주택 마당의 담(높이 1.5 m: 벽돌 또는 석재) — 거리뷰의 주택가에서 본 꼴
         yw = P(b0['yard']).exterior.buffer(.2, cap_style=2, join_style=2); wc = r.choice([wall, '#b9b3a6', '#8f8c86', '#d8d2c4'])
         for q in parts(yw): q = orient(q, 1.0); skin(mb, q, 0.0, lambda x, y: 1.5, mat_flat(wc), 1, 1); capf(mb, q, lambda x, y: 1.5, mat_flat(shade(wc, .82)))
-    if house or (brick and not civic and 2 <= nfl <= 4 and ar < 420 and r.random() < .36):   # 경사 지붕: 단독주택은 박공·우진각, 벽돌 다세대의 3분의 1 은 꼭대기에 기와 지붕
-        col = r.choice(TILEC if house else ['#5a4a44', '#4d5258', '#6b3f33', '#3f5560', '#7a4a3a'])
+    rf = b0.get('rf', '')   # 위성 화면에서 읽은 이 건물의 지붕 종류(없으면 아래 고정 난수)
+    pitched = (rf == 'tile' and nfl <= 5 and ar < 900) or (house and rf not in ('green', 'light', 'grey')) or (not rf and brick and not civic and 2 <= nfl <= 4 and ar < 420 and r.random() < .36)
+    if pitched:   # 경사 지붕: 붉은 기와로 읽힌 건물, 단독주택(박공·우진각), 판독이 없는 벽돌 다세대의 3분의 1
+        col = r.choice(PITCHC.get(rf) or (TILEC if house else ['#5a4a44', '#4d5258', '#6b3f33', '#3f5560', '#7a4a3a']))
         mb.face([(x, y, h) for x, y in list(orient(poly.buffer(.45, join_style=2), -1.0).exterior.coords)[:-1]], mat_flat(shade(wall, .7)))
         if house and r.random() < .6: gableroof(mb, poly, h, col, wall)
         else: hiproof(mb, poly, h, col, over=.45, step=.6 if house else .7, rise=.36 if house else .42)
         return mb.build('b%d' % idx, idx)
-    deck = mat_flat(r.choice(DECKC)); inner = poly.buffer(-0.28, join_style=2)
+    deck = mat_flat(r.choice(ROOFC.get(rf) or DECKC)); inner = poly.buffer(-0.28, join_style=2)
     if inner.geom_type == 'Polygon' and inner.area > 6 and not inner.interiors and not poly.interiors:   # 파라펫
         zt = h + 0.55
         for ring, flip in ((poly.exterior, False), (inner.exterior, True)):

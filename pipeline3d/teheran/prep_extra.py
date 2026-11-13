@@ -252,6 +252,10 @@ NBH = [(127.04386, 37.49603, 'new'), (127.05326, 37.49874, 'shop'), (127.05341, 
        (127.06174, 37.51745, 'house'), (127.05274, 37.51046, 'brick'), (127.02955, 37.5033, 'house'), (127.04424, 37.52228, 'brick'), (127.05853, 37.50082, 'brick'), (127.03846, 37.50347, 'new'), (127.03891, 37.51979, 'mixed'),
        (127.0385, 37.4965, 'shop'), (127.0330, 37.5090, 'shop'), (127.0500, 37.5140, 'brick'), (127.0570, 37.5020, 'mixed'), (127.0445, 37.5025, 'shop')]
 nbxy = np.array([tm5186(lo, la) for lo, la, _ in NBH], float); nyard = 0; ntr = len(S['trees'])
+# 건물별 지붕 종류(roof_classes.py 가 위성 화면에서 읽은 표. 없으면 지붕은 고정 난수): green 초록 방수 바닥, grey·light·dark 콘크리트·밝은·짙은 바닥, tile 붉은 기와, blue 파란 지붕, tan 황토색
+RC = json.load(open('osm/roof_classes.json')) if os.path.exists('osm/roof_classes.json') else {}
+for b in B: b['rf'] = RC.get(b['osm'], '')
+print('roof classes', sum(1 for b in B if b['rf']), 'of', len(B))
 for i, (b, bp) in enumerate(zip(B, bpoly)):
     c = bp.centroid; d = np.hypot(nbxy[:, 0] - c.x, nbxy[:, 1] - c.y); j = int(d.argmin()); b['nb'] = NBH[j][2] if d[j] < 380 else ''
     rr = random.Random(b['seed'] * 7 + 3); nfl = max(1, round(max(3.0, b['h']) / 3.3)); hs = b['nb'] == 'house'
