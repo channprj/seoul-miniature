@@ -31,6 +31,8 @@
 | `teheran/plaza_samseong.py` | 빌더 | 삼성역 광장: 밀레니엄 광장(원형 광장의 강철 기둥·스테인리스 구, 초승달꼴 내리막 계단), 달걀꼴 조형탑, 판석·화단·줄무늬 파빌리온·가로등, 호텔 앞 깃대, 공사 야적장(벽화 담장·창고·크롤러 크레인·펌프카). `lm_build.py` 가 끝에서 읽는다. 자리는 `prep_extra.py` 가 `scene.json` 의 `samseong` 에 적는다 |
 | `teheran/detail.py` | 빌더 | 일반 건물 세부: 저층(`modern` — 빌라·주택·상가의 외벽 유형, 필로티·가게 1층, 옥탑·물탱크·태양광 옥상, 경사 지붕), 아파트(`apartment` — 단지별 색, 측벽 동 번호, 옥상 기계실·장식 틀, 단지 담·정문), 일반 타워(`tower` — 다섯 입면 유형, 거리뷰에서 읽은 꼭대기 간판 `TOWER_SIGNS`), 랜드마크 옥상(`ltower`), 포스코센터(`posco`). 거리뷰에서 본 단지 26곳의 색(`CXS`)과 랜드마크 옥상 설정(`lm_build.py` 의 `heli`·`deck`·`tiers`·`solar`)이 표로 들어 있다. `prep_extra.py` 가 동을 단지로 묶고 단지 마당(정원·주차 띠·조경수·출입구), 동네별 외장 경향(`NBH`), 단독주택 마당(담·정원수), 큰길 접함을 장면 자료에 더한다 |
 | `teheran/roof_classes.py` | 입력(선택) | 위에서 본 정사 그림(공개판은 네이버 지도 위성 화면 56장)에서 20 m 이하 건물의 지붕 종류를 읽어 `osm/roof_classes.json` 을 만든다. `prep_extra.py` 가 있으면 읽고(`rf`), `detail.py` 의 `modern` 이 지붕 꼴(평지붕·경사 지붕)과 색표를 고른다. 그림과 표는 저장소에 없다 |
+| `teheran/ground_kinds.py` | 입력(선택) | `roof_classes.py` 와 같은 그림에서 OSM 에 없는 땅의 종류를 2 m 래스터 `osm/ground_kinds.png` 로 읽는다. `prep_extra.py` 가 장면 자료에 붙이고(`ground_raster`, 나무 심기), `yeouido/gen_area.py` 가 바탕 지면 분류로 받아 쓰며, `detail.py` 가 주차 칸·판석 줄눈을 그린다 |
+| `teheran/parnas.py` | 빌더 | 그랜드 인터컨티넨탈 서울 파르나스의 현관동·캐노피·정원·로터리, 파르나스타워 세로 전광판, 현대백화점 무역센터점 전용 모델(`SPECIAL` 표로 일반 빌더 대신 불린다) |
 | `teheran/signs.py` | 빌더 | 랜드마크 간판·전광판: 거리뷰에서 글자를 읽은 것만. 건물 윤곽을 따라 붙는 띠(`wall_strip`)에 글자 그림(`sign_png`)을 입힌다. 글꼴은 macOS 기본 글꼴(Georgia, Arial)을 쓰고 없으면 Pillow 기본 글꼴로 바꾼다 |
 | `teheran/patch.sh`, `teheran/patch_tiles.py` | 부분 굽기 | 한 구역만 고쳤을 때: 그 타일을 고치기 전·후 코드로 각각 렌더해 달라진 화소만 지금 자산에 덧입힌다(팔레트·다른 타일은 그대로) |
 | `teheran/render_tiles.sh`, `teheran/build_assets_th.py`, `teheran/run.sh` | 렌더·굽기 | 8×8 타일 렌더, 양식 패스 없이 조건 렌더를 그대로 굽는 굽기(여의도 굽기의 단계 함수를 부른다), 처음부터 끝까지의 순서 |
