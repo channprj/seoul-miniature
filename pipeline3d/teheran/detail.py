@@ -367,6 +367,28 @@ TOWER_STYLE = {
     'w703780988': dict(sty='stone', st=('#b9b6ae', '#2f3d49')), 'w800238998': dict(sty='stone', st=('#cfcfca', '#34444f')), 'w547175590': dict(sty='fins', g='#5d8fbf', st=('#e6e4dc', '#4f7fb5')),
     'w471384881': dict(sty='curtain', g='#5f9aa0'), 'w557469316': dict(sty='stone', st=('#f0eee8', '#3d5166')), 'w1078788212': dict(sty='band', g='#6f9cc0', spc='#d8c9ae'),   # 빅토리아오피스텔: 베이지 석재 띠 + 파란 띠창
 }
+# 58 m 이상 타워 212채의 옥상(네이버 지도 위성 화면에서 건물마다 눈으로 읽음, 2026-11-13). 첫 글자 = 헬리패드(g 초록 판, w 회색·흰 판, p 분홍 판에 붉은 원, k 짙은 판, n 없음), 둘째 글자 = 옥상 바닥(G 초록, L 밝은 색, D 짙은 색, T 황토, B 파랑).
+# 판독한 212채 가운데 헬리패드가 있는 것은 43채다(대체로 85 m 이상). 설비의 자리는 맞추지 않았다. 항공 사진에서 지붕이 옆으로 밀려 찍히므로 윤곽 옆의 지붕을 그 건물 것으로 읽었다.
+TOWER_ROOF = dict(x.split(':') for x in (
+    'w64988494:gL w182197532:pL w182197533:pL w192743522:wL w468950539:gL w468950540:gL w888051962:gL w888051964:gL w182197535:pD w504227059:wD w924182862:wL w888051971:gL w888051961:gL '
+    'w606127885:nD w74056398:gL r19640833:nD w74056381:wD w557469309:nG w562011093:wD w74056393:gL w468950546:gL w664427650:gD w561726140:wL r19639969:nL w85032870:nL w1431190867:wL w804792360:wD '
+    'w561457410:nG w1436266721:nD w194455125:nD r19640542:nG w169235087:wL w562011017:nL w888051969:wL w504509913:nD w804474442:wD w1432287935:nD w804476135:wL w85032872:nG w1431826750:nD '
+    'w804792364:nG w1078790203:nL w703780986:nD w561726183:gG w606127881:nD w606127882:wL w1078790207:nD w1435117236:nD w557469327:nL w871868156:gL w562011058:nL w562011063:nD w562011095:nL '
+    'w358294591:nD w804792735:wL w800239005:nD w1359388903:gG w619975346:nL w471384881:nL w703780984:wL w801056146:nG w862420979:nD w1436264005:nD w845329550:gG w1078790206:nL w1078790201:gG '
+    'w703651991:wD w800180976:nD w356427527:nL w561726184:wL w804476136:nG w1078788206:nL w1078788207:nL w1078790208:nL w471384885:nL w703780985:wL w379232123:gG w272052331:nL w272052332:nD '
+    'w272052334:nL w804792362:nG w804792734:nD w1434861702:nD r19639970:nG w379232109:nD w555228273:nL w1290908893:nL w379232111:nD w561457400:gG w561726138:nL w845329553:nD w539224760:nD '
+    'w562011056:nG w1078790202:nD w1084053292:nD w117823775:wL w478771467:gL w478771468:gG w801056147:nG w561726162:nG w1432576160:nD w800180989:nD w452819195:nL w803330421:kD w561726136:nL '
+    'w561726145:nG w804791463:nG w800239002:nD w562011099:nL w630058453:nD w800177552:nD w803330477:nG w845290624:nL w800177554:nD w557469314:nL w1078790209:nD w358294592:nD w804791466:nL '
+    'w1084053296:nL w541695113:nL w561457411:nL w1078790205:nL w803334060:nL w804792358:nG w845290622:nL w164655841:nL w705120357:nL w562011065:nD w562011100:nG w804791467:nD w540202621:nL '
+    'w547175590:nD w557469345:nL w606127873:nL w946666631:nD w562010976:nD w1078790212:nG w804792736:nL w1434825112:nD w547174121:nT w504490016:nL w871868157:nL w804475779:nD w1435216628:nD '
+    'w358294564:nL w672465729:nL w561457392:nL w1434833756:nD w804792732:nG w804792733:nG w668205102:nL w803330420:nD w194455161:nL w804788008:nL w845284439:nL w845290621:nD w557469329:nL '
+    'w1435112435:nL w471384887:nD w561726181:nG w804791469:nL w703780987:nL w703780990:nL w801056149:nG w1435211136:nT w1435212331:nD w229258834:nL w562011054:nL w1359388920:nD w468926904:nL '
+    'w562011026:nG w1078790211:nL w1065771475:nD w804792365:nG w1434835336:nL w561726193:nL w1434564990:nL w703780989:nD w801056145:nG w547174119:nD w557469343:nG w871868165:nD w1434619328:nD '
+    'w1351850725:nD w672465728:nL w562011047:nB w803334055:nL w804792359:nL w1434825567:nL w679004824:nD w804792731:nL w1435082856:nL w803330480:nL r8833641:nG w540197573:nL w540202620:nD '
+    'w1065771472:nD w562011066:nG w975339870:nT w1419310662:nD w1434876246:nL w1435091428:nD w800180988:nL w800186284:nL w1065771478:nL w679004823:nL w800177556:nL w1084058219:nD w555228277:nL '
+    'w561726157:nL w562011029:nL w976267547:nD '
+).split())
+HPAD = {'g': ('#4f9a78', '#f6f6f1'), 'w': ('#8d949c', '#f1f1ec'), 'p': ('#d9c2b8', '#c8402e'), 'k': ('#5a5048', '#f1f1ec')}; TDECK = {'G': '#5aa583', 'L': '#c9cbcc', 'D': '#6a6d70', 'T': '#b79a78', 'B': '#4f7fb5'}
 def vsign_png(path):
     """세로 간판: 가로 글자 그림을 시계 방향으로 돌린다(위에서 아래로 읽힌다)."""
     p = path[:-4] + '_v.png'
@@ -392,9 +414,14 @@ def tower(b, idx, cfg=None):
     if r.random() < .4 and cr_.geom_type == 'Polygon' and cr_.area > 30:   # 한 단 들어간 꼭대기
         hz = min(9.0, 0.05 * h + 3); skin(mb, orient(cr_, 1.0), h, lambda x, y: h + hz, m, tw, th); capf(mb, cr_, lambda x, y: h + hz, mat_flat('#8f9296')); up_ = (cr_, h + hz)
     elif core.geom_type == 'Polygon' and core.area > 15: skin(mb, orient(core, 1.0), h, lambda x, y: h + 4.5, mat_flat('#a9aaa8'), 1, 1); capf(mb, core, lambda x, y: h + 4.5, mat_flat('#8c8e90')); up_ = (core, h + 4.5)
-    heli = h >= 100 and up_ is not None
-    if heli: heli_std(mb, c, ax_, up_[1], Ly, r)
+    tr = TOWER_ROOF.get(b['osm']); heli = (tr[0] != 'n') if tr else (h >= 100 and up_ is not None)
+    if heli and not tr: heli_std(mb, c, ax_, up_[1], Ly, r)
+    elif heli: helipad(mb, c, ax_, up_[1] if up_ else h + .1, min(9.5, .32 * Ly), *HPAD[tr[0]], 'circle', .5 if up_ else .12)
     roof_std(mb, poly, h, up_[0] if up_ else None, up_[1] if up_ else h, heli, b['seed'])
+    if tr:   # 위성 화면에서 읽은 옥상 바닥 색
+        inn = poly.buffer(-1.5, join_style=2); inn = inn.difference(up_[0].buffer(.05)) if up_ else inn.difference(Point(*c).buffer(min(9.5, .32 * Ly) * 1.45)) if heli else inn
+        for q in parts(inn):
+            if q.area > 6: capf(mb, orient(q, 1.0), lambda x, y: h + .09, mat_flat(TDECK[tr[1]]))
     sg_ = TOWER_SIGNS.get(b['osm'])
     if sg_:
         text, fg, bg, fonts, road, mode = sg_; pth, asp = sign_png('tw_' + b['osm'], text, fg, bg, fonts, track=.08); dv = np.array(_toward_road(poly, road), float); dv /= np.hypot(*dv); side = np.array([-dv[1], dv[0]])

@@ -255,6 +255,14 @@ nbxy = np.array([tm5186(lo, la) for lo, la, _ in NBH], float); nyard = 0; ntr = 
 # 건물별 지붕 종류(roof_classes.py 가 위성 화면에서 읽은 표. 없으면 지붕은 고정 난수): green 초록 방수 바닥, grey·light·dark 콘크리트·밝은·짙은 바닥, tile 붉은 기와, blue 파란 지붕, tan 황토색
 RC = json.load(open('osm/roof_classes.json')) if os.path.exists('osm/roof_classes.json') else {}
 for b in B: b['rf'] = RC.get(b['osm'], '')
+if RC:   # 나무·그림자에 가려 읽지 못한 20 m 이하 건물: 45 m 안에서 가장 가까운 판독 건물의 종류를 따른다(같은 골목의 지붕은 대체로 비슷하다)
+    from scipy.spatial import cKDTree
+    kn = [i for i, b in enumerate(B) if b['rf']]; kt = cKDTree(np.array([bpoly[i].centroid.coords[0] for i in kn])); nfill = 0
+    for i, b in enumerate(B):
+        if b['rf'] or b['h'] > 20: continue
+        d_, j_ = kt.query(bpoly[i].centroid.coords[0])
+        if d_ < 45: b['rf'] = B[kn[j_]]['rf'] if B[kn[j_]]['rf'] != 'blue' else 'grey'; b['rf_from'] = 'neighbour'; nfill += 1
+    print('roof kinds filled from neighbours', nfill)
 print('roof classes', sum(1 for b in B if b['rf']), 'of', len(B))
 for i, (b, bp) in enumerate(zip(B, bpoly)):
     c = bp.centroid; d = np.hypot(nbxy[:, 0] - c.x, nbxy[:, 1] - c.y); j = int(d.argmin()); b['nb'] = NBH[j][2] if d[j] < 380 else ''
