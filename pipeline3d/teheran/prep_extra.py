@@ -273,11 +273,19 @@ for k, bs in sorted(grp.items()):
     for g in sorted(gates, key=lambda g: -g[3])[:2]: g[4] = 1
     S['complexes'].append({'name': nm, 'rings': rings(p, .3), 'era': era, 'seed': seed, 'lv': lv, 'n': len(bs), 'gates': gates})
 # ---- 주택가: 거리뷰에서 본 동네별 외장 경향, 단독주택의 마당(담·정원수) ----
-# 2026-11-13 에 본 골목 19곳(경도, 위도, 경향). brick = 붉은·고동색 벽돌 다세대가 대부분, new = 흰 석재 판·짙은 타일·송판 노출 콘크리트의 새 다세대, house = 박공지붕 벽돌 단독주택과 담장·정원수,
-# shop = 학원·가게가 든 근린 건물, mixed = 섞임. 본 자리에서 380 m 안의 건물이 그 경향을 따르고, 그 밖은 섞인 기본값이다(건물 하나하나를 맞춘 것이 아니다).
+# 2026-11-13 에 본 골목 57곳(경도, 위도, 경향). brick = 붉은·고동색 벽돌 다세대가 대부분, new = 흰 석재 판·짙은 타일·송판 노출 콘크리트의 새 다세대, house = 박공지붕 벽돌 단독주택과 담장·정원수,
+# shop = 학원·가게가 든 근린 건물, mixed = 섞임. 가장 가까운 본 자리(300 m 안)의 경향을 따르고, 그 밖은 섞인 기본값이다(건물 하나하나를 맞춘 것이 아니다).
 NBH = [(127.04386, 37.49603, 'new'), (127.05326, 37.49874, 'shop'), (127.05341, 37.5173, 'house'), (127.02945, 37.51027, 'mixed'), (127.04457, 37.51277, 'mixed'), (127.0442, 37.50566, 'brick'), (127.03523, 37.49626, 'brick'),
        (127.06174, 37.51745, 'house'), (127.05274, 37.51046, 'brick'), (127.02955, 37.5033, 'house'), (127.04424, 37.52228, 'brick'), (127.05853, 37.50082, 'brick'), (127.03846, 37.50347, 'new'), (127.03891, 37.51979, 'mixed'),
        (127.0385, 37.4965, 'shop'), (127.0330, 37.5090, 'shop'), (127.0500, 37.5140, 'brick'), (127.0570, 37.5020, 'mixed'), (127.0445, 37.5025, 'shop')]
+NBH += [   # 2차로 본 골목 38곳(같은 날): 저층 건물이 많은 200 m 칸 가운데 1차 표본에서 230 m 넘게 떨어진 곳
+    (127.05652, 37.51068, 'shop'), (127.03384, 37.51232, 'brick'), (127.05894, 37.50522, 'mixed'), (127.05417, 37.50325, 'mixed'), (127.04072, 37.51099, 'mixed'), (127.02711, 37.50711, 'shop'),
+    (127.03376, 37.50167, 'mixed'), (127.0361, 37.50562, 'new'), (127.03625, 37.49433, 'brick'), (127.0566, 37.49836, 'mixed'), (127.04301, 37.50902, 'shop'), (127.04092, 37.49822, 'new'), (127.05219,
+    37.50216, 'shop'), (127.03829, 37.49303, 'new'), (127.03824, 37.50706, 'mixed'), (127.03581, 37.50913, 'shop'), (127.03202, 37.4946, 'new'), (127.0474, 37.52173, 'mixed'), (127.02736, 37.5019, 'new'),
+    (127.04068, 37.51426, 'mixed'), (127.04026, 37.50532, 'shop'), (127.03398, 37.49134, 'mixed'), (127.04267, 37.49958, 'brick'), (127.03191, 37.51636, 'mixed'), (127.03837, 37.51233, 'mixed'),
+    (127.06129, 37.50358, 'new'), (127.03169, 37.50501, 'new'), (127.04344, 37.51937, 'house'), (127.03659, 37.51785, 'new'), (127.02903, 37.49998, 'shop'), (127.04713, 37.50572, 'shop'), (127.0407,
+    37.52244, 'new'), (127.05005, 37.51135, 'new'), (127.04105, 37.49475, 'shop'), (127.05487, 37.51216, 'mixed'), (127.03689, 37.5144, 'house'), (127.04733, 37.51213, 'shop'), (127.04938, 37.51988,
+    'shop')]
 nbxy = np.array([tm5186(lo, la) for lo, la, _ in NBH], float); nyard = 0; ntr = len(S['trees'])
 # 건물별 지붕 종류(roof_classes.py 가 위성 화면에서 읽은 표. 없으면 지붕은 고정 난수): green 초록 방수 바닥, grey·light·dark 콘크리트·밝은·짙은 바닥, tile 붉은 기와, blue 파란 지붕, tan 황토색
 RC = json.load(open('osm/roof_classes.json')) if os.path.exists('osm/roof_classes.json') else {}
@@ -292,7 +300,7 @@ if RC:   # 나무·그림자에 가려 읽지 못한 20 m 이하 건물: 45 m �
     print('roof kinds filled from neighbours', nfill)
 print('roof classes', sum(1 for b in B if b['rf']), 'of', len(B))
 for i, (b, bp) in enumerate(zip(B, bpoly)):
-    c = bp.centroid; d = np.hypot(nbxy[:, 0] - c.x, nbxy[:, 1] - c.y); j = int(d.argmin()); b['nb'] = NBH[j][2] if d[j] < 380 else ''
+    c = bp.centroid; d = np.hypot(nbxy[:, 0] - c.x, nbxy[:, 1] - c.y); j = int(d.argmin()); b['nb'] = NBH[j][2] if d[j] < 300 else ''
     rr = random.Random(b['seed'] * 7 + 3); nfl = max(1, round(max(3.0, b['h']) / 3.3)); hs = b['nb'] == 'house'
     b['house'] = bool(b['kind'] in ('house', 'detached') or (b['kind'] in ('yes', 'residential') and b['rd'] != 'major' and b['area'] < (170 if hs else 120) and nfl <= 2 and rr.random() < (.8 if hs else .5)))
     if not b['house'] or b['area'] < 40: continue
