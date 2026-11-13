@@ -33,6 +33,7 @@
 | `teheran/roof_classes.py` | 입력(선택) | 위에서 본 정사 그림(공개판은 네이버 지도 위성 화면 56장)에서 20 m 이하 건물의 지붕 종류를 읽어 `osm/roof_classes.json` 을 만든다. `prep_extra.py` 가 있으면 읽고(`rf`), `detail.py` 의 `modern` 이 지붕 꼴(평지붕·경사 지붕)과 색표를 고른다. 그림과 표는 저장소에 없다 |
 | `teheran/ground_kinds.py` | 입력(선택) | `roof_classes.py` 와 같은 그림에서 OSM 에 없는 땅의 종류를 2 m 래스터 `osm/ground_kinds.png` 로 읽는다. `prep_extra.py` 가 장면 자료에 붙이고(`ground_raster`, 나무 심기), `yeouido/gen_area.py` 가 바탕 지면 분류로 받아 쓰며, `detail.py` 가 주차 칸·판석 줄눈을 그린다 |
 | `teheran/parnas.py` | 빌더 | 그랜드 인터컨티넨탈 서울 파르나스의 현관동·캐노피·정원·로터리, 파르나스타워 세로 전광판, 현대백화점 무역센터점 전용 모델(`SPECIAL` 표로 일반 빌더 대신 불린다), 현대아이파크타워의 입면 조형(은색 원 테와 붉은 상자·줄무늬) |
+| `teheran/crowns.py` | 빌더 | 랜드마크 타워에 덧붙이는 형태: 삼성 서초사옥 세 동의 짙은 틈과 삼성전자 동 북쪽 별동, 메리츠타워 옥상의 비스듬한 금속 틀, GS타워 서쪽 끝면(짙은 유리·검은 줄·글자). 삼성전자 동을 타워와 별동으로 나누고 삼성생명 동의 윤곽을 고치는 일은 `prep_extra.py` 끝에서 한다 |
 | `teheran/signs.py` | 빌더 | 랜드마크 간판·전광판: 거리뷰에서 글자를 읽은 것만. 건물 윤곽을 따라 붙는 띠(`wall_strip`)에 글자 그림(`sign_png`)을 입힌다. 글꼴은 macOS 기본 글꼴(Georgia, Arial)을 쓰고 없으면 Pillow 기본 글꼴로 바꾼다 |
 | `teheran/patch.sh`, `teheran/patch_tiles.py` | 부분 굽기 | 한 구역만 고쳤을 때: 그 타일을 고치기 전·후 코드로 각각 렌더해 달라진 화소만 지금 자산에 덧입힌다(팔레트·다른 타일은 그대로) |
 | `teheran/render_tiles.sh`, `teheran/build_assets_th.py`, `teheran/run.sh` | 렌더·굽기 | 8×8 타일 렌더, 양식 패스 없이 조건 렌더를 그대로 굽는 굽기(여의도 굽기의 단계 함수를 부른다), 처음부터 끝까지의 순서 |

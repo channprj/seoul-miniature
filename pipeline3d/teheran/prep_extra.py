@@ -350,6 +350,30 @@ if os.path.exists('osm/ground_kinds.png'):
     print('ground kinds: cells', {k: int((gk == i).sum()) for i, k in enumerate(('unknown', 'tree', 'grass', 'sand', 'asphalt', 'pave'))}, 'trees +', len(S['trees']) - nt1)
 print('complexes', len(S['complexes']), 'old', sum(c['era'] == 'old' for c in S['complexes']), 'apartments in complexes', sum(1 for b in B if 'cx' in b), 'garden trees +', len(S['trees']) - nt0)
 
+# ---- 삼성 서초사옥: OSM 윤곽을 실제 덩어리에 맞춘다(네이버 지도 위성·일반 지도 화면과 거리뷰를 눈으로 봄) ----
+#   삼성전자 동(r8311185)은 한 윤곽이지만 북쪽 40 m 는 낮은 별동(옥상 정원, 짙은 가로 루버 유리)이고 남쪽만 203 m 타워다. 동쪽 변의 꺾인 자리에서 나눈다. 별동 높이 42 m 는 거리뷰에서 어림한 값.
+#   삼성생명 동은 OSM 에 가운데 띠(w504227059, 150 m)와 얇은 조각 둘(r8311183)로 나뉘어 있어 얇게 선다. 셋을 감싼 볼록 윤곽 하나로 세운다(위성 화면의 옥상 크기 45 × 57 m 와 맞음).
+# 건물 순번(= 물체 ID)이 바뀌지 않게 있던 항목은 제자리에서 고치고 새 항목은 맨 끝에 더한다.
+from shapely.geometry import Polygon as _Pg, MultiPoint as _Mp
+from shapely.ops import split as _split
+_ix = {}
+for _i, _b in enumerate(S['buildings']): _ix.setdefault(_b['osm'], []).append(_i)
+if 'r8311185' in _ix and 'r8311185n' not in _ix:
+    _b = S['buildings'][_ix['r8311185'][0]]; _g = _Pg(_b['rings'][0]); _r = np.array(_b['rings'][0][:-1]); _c = _r.mean(0)
+    _u, _s, _vt = np.linalg.svd(_r - _c); _ax = _vt[0] if _vt[0][1] > 0 else -_vt[0]; _t = (_r - _c) @ _ax; _cut = _t.max() - 40.5; _nv = np.array([-_ax[1], _ax[0]])
+    _q = _c + _ax * _cut; _hs = _Pg([(_q - _nv * 200).tolist(), (_q + _nv * 200).tolist(), (_q + _nv * 200 + _ax * 400).tolist(), (_q - _nv * 200 + _ax * 400).tolist()])
+    _north, _south = _g.intersection(_hs), _g.difference(_hs)
+    if _north.geom_type == 'Polygon' and _south.geom_type == 'Polygon':
+        _b['rings'] = [np.round(np.array(_south.exterior.coords), 2).tolist()]; _b['area'] = round(_south.area, 1)
+        _n = dict(_b); _n.update(osm='r8311185n', rings=[np.round(np.array(_north.exterior.coords), 2).tolist()], h=42.0, lv=9, area=round(_north.area, 1), name='', name_en='', seed=_b['seed'] + 7, kind='office'); S['buildings'].append(_n)
+        S['landmarks']['samsung_e'].update(rings=[_b['rings']]); print('samsung_e split: tower', round(_south.area), 'm2, annex', round(_north.area), 'm2')
+if 'w504227059' in _ix and 'r8311183' in _ix:
+    _b = S['buildings'][_ix['w504227059'][0]]; _pts = [tuple(p) for i in _ix['w504227059'] + _ix['r8311183'] for p in S['buildings'][i]['rings'][0]]
+    _h = _Mp(_pts).convex_hull.buffer(.6, join_style=2)
+    if _b['area'] < _h.area * .8:
+        _b['rings'] = [np.round(np.array(_h.exterior.coords), 2).tolist()]; _b['area'] = round(_h.area, 1); _b['name'] = '삼성생명 서초타워'; _b['kind'] = 'office'
+        S['landmarks']['samsung_l'].update(rings=[_b['rings']], h=150.0, h_top=150.0, osm='w504227059'); print('samsung_l hull', round(_h.area), 'm2')
+
 S['extra'] = 'teheran/prep_extra.py'
 json.dump(S, open('scene.json', 'w'), separators=(',', ':'))
 print('wrote scene.json')

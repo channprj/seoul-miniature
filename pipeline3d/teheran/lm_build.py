@@ -19,7 +19,7 @@ LMC.update({
     'samsung_l': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=2, heli=False, deck='#c9cbcc'),
     'cf_e': dict(glass='#5d7186', line='#2f3b47', flh=4.3, bay=1.0, sp=.10, lobby=10.0, kit=3, heli=False, deck='#d0d2d3', solar=True),                               # 센터필드 두 동: 짙은 청회색 유리, 촘촘한 세로 멀리언
     'cf_w': dict(glass='#5d7186', line='#2f3b47', flh=4.3, bay=1.0, sp=.10, lobby=10.0, kit=3, heli=False, deck='#d0d2d3', solar=True),
-    'gs': dict(glass='#4b5661', line='#2c343c', flh=4.2, bay=1.5, sp=.20, spc='#98a1a8', lobby=10.0, crownband=3.0, kit=3),  # GS타워: 짙은 회색 반사 유리 + 금속 띠
+    'gs': dict(glass='#93a0aa', line='#dfe3e6', flh=4.2, bay=1.5, sp=.30, spc='#d9dde0', lobby=10.0, crownband=3.0, kit=3),  # GS타워: 긴 면은 밝은 은회색 격자(거리뷰). 서쪽 끝면의 짙은 반사 유리는 crowns.py
     'meritz': dict(glass='#6f8fae', line='#4d6b88', flh=4.2, bay=1.5, sp=.20, lobby=9.0, kit=2, heli=('#4f9a78', '#f6f6f1'), heliflat=True, deck='#4f9a78'),
     'glass': dict(glass='#768a9b', line='#4d5f6e', flh=3.7, bay=1.5, sp=.30, spc='#aab3ba', lobby=8.0, kit=2, heli=('#8d949c', '#f1f1ec'), deck='#9a9c9e'),               # 글라스타워: 둥근 평면의 회청색 유리 + 가로 띠
     'gt': dict(glass='#6f9cc0', line='#4c7396', flh=4.4, bay=1.6, sp=.14, spc='#e9eef0'),                                    # GT타워: 물결치는 유리면
@@ -308,5 +308,6 @@ for _k, _a in enumerate(AR.get('dirt', [])):
 exec(compile(open(AREA + '/signs.py', encoding='utf-8').read(), AREA + '/signs.py', 'exec'))   # 랜드마크 간판·전광판
 exec(compile(open(AREA + '/detail.py', encoding='utf-8').read(), AREA + '/detail.py', 'exec'))   # 일반 건물 세부(빌라·주택, 아파트 동과 단지, 일반 타워, 포스코센터)
 exec(compile(open(AREA + '/parnas.py', encoding='utf-8').read(), AREA + '/parnas.py', 'exec'))   # 파르나스 호텔 현관동·캐노피·깃대·정원, 파르나스타워 세로 전광판
+exec(compile(open(AREA + '/crowns.py', encoding='utf-8').read(), AREA + '/crowns.py', 'exec'))   # 삼성 서초사옥의 틈·별동, 메리츠타워 꼭대기 틀, GS타워 끝면
 exec(compile(open(AREA + '/plaza_samseong.py', encoding='utf-8').read(), AREA + '/plaza_samseong.py', 'exec'))   # 삼성역 광장(내리막 계단 자리는 _pits 에 더한다)
 if _pits: WATERc = unary_union([WATERc] + _pits)   # 굴착 자리는 지면 판에서 도려낸다(gen_area 가 물가처럼 5.5 m 비탈을 두른다). 텍스처는 그대로 흙색
