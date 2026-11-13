@@ -1,6 +1,6 @@
 # 테헤란로 일반 건물의 세부. lm_build.py 끝에서 exec 로 읽는다(같은 전역: MB, mat_flat, mat_tex, skin, capf, obox, beam, ring_runs, grid_tex, finwall_tex, roof_std, sign_png, wall_strip …).
 # gen_area.py 의 일반 빌더 셋을 이 지역 것으로 바꾼다: modern(저층: 빌라·주택·상가·근린 사무실), apartment(아파트 동), tower(45 m 이상 일반 타워).
-# 생김새는 네이버 지도 거리뷰를 눈으로 보고 정했다(2026-11-13: 대치·역삼·논현·삼성동 주택가 골목 5곳, 아파트 단지 8곳, 테헤란로 150 m 간격 23곳). 사진은 저장소에 넣지 않았다.
+# 생김새는 네이버 지도 거리뷰를 눈으로 보고 정했다(2026-11-13: 역삼·대치·삼성·논현·청담동 주택가 골목 19곳, 아파트 단지 26곳, 테헤란로 150 m 간격 23곳). 사진은 저장소에 넣지 않았다.
 # 건물마다 실제 외장을 맞춘 것이 아니라, 거리뷰에서 본 유형을 건물 종류·크기·면한 길에 따라 고정 난수로 나눠 준 것이다(같은 건물은 다시 렌더해도 같다).
 
 def _png(name, w, h, bg, draw):
@@ -36,6 +36,7 @@ def villa_atlas(st):
                     for y in range(0, C, 4):
                         d.line([(ox, oy + y), (ox + C - 1, oy + y)], fill=dark)
                         for x in range((y // 4 % 2) * 6, C, 12): d.line([(ox + x, oy + y), (ox + x, oy + y + 3)], fill=dark)
+                    d.rectangle([ox, oy + C - 5, ox + C, oy + C - 2], fill='#cfc8b8')   # 층마다 도는 석재 띠(거리뷰의 벽돌 다세대)
                 elif pat == 'tile':
                     for y in range(0, C, 8): d.line([(ox, oy + y), (ox + C, oy + y)], fill=dark)
                     for x in range(0, C, 8): d.line([(ox + x, oy), (ox + x, oy + C)], fill=dark)
@@ -99,27 +100,57 @@ def hiproof(mb, poly, z, col, over=.45, step=.55, rise=.36):
         if not qs: break
         for q in qs: q = orient(q, 1.0); skin(mb, q, z, lambda x, y: z + rise, mat_flat(shade(col, .84)), 1, 1); capf(mb, q, lambda x, y: z + rise, mat_flat(shade(col, 1 + .06 * (k % 2))))
         z += rise
+VST.update({'brick_d': ('#7d4234', '#643428', '#e6dfd0', '#2f3c48', 'brick'), 'tile_k': ('#5a5d61', '#484b4f', '#2c2f33', '#3a4a57', 'tile'), 'board_c': ('#b9b6ae', '#a3a098', '#3f4347', '#2f3d49', 'metal')})   # 고동색 벽돌, 짙은 타일, 송판 노출 콘크리트
+def gableroof(mb, poly, z, col, wallhex, over=.5):
+    """박공지붕(네모에 가까운 평면만, 아니면 우진각 근사): 긴 축을 따라 용마루, 양 끝은 벽 색 세모 박공."""
+    _c, ax, Lx, Ly, mc = mrr_axes(poly)
+    if poly.area < .8 * Lx * Ly or Ly < 3: return hiproof(mb, poly, z, col)
+    c = np.array(mc).mean(axis=0); nv = np.array([-ax[1], ax[0]]); hx, hy = Lx / 2 + over, Ly / 2 + over; rz = z + hy * .62
+    P4 = lambda u, v, zz: (c[0] + ax[0] * u + nv[0] * v, c[1] + ax[1] * u + nv[1] * v, zz)
+    mb.face([P4(-hx, -hy, z), P4(hx, -hy, z), P4(hx, 0, rz), P4(-hx, 0, rz)], mat_flat(col)); mb.face([P4(hx, hy, z), P4(-hx, hy, z), P4(-hx, 0, rz), P4(hx, 0, rz)], mat_flat(shade(col, .88)))
+    for su in (-1, 1): u = su * Lx / 2; mb.face([P4(u, -Ly / 2, z), P4(u, Ly / 2, z), P4(u, 0, rz - over * .62)], mat_flat(wallhex))
+    beam(mb, P4(-hx, 0, rz + .08), P4(hx, 0, rz + .08), .35, mat_flat(shade(col, .75)))   # 용마루
 DECKC = ['#5aa583', '#63ad8c', '#58a17d', '#5aa583', '#a5a39c', '#a5a39c', '#8f9296', '#4a4d55', '#b0604a']
 TILEC = ['#c2603f', '#b4664a', '#8a5a44', '#5a6c7d', '#4d5258', '#4f7f6a']
-VILLA = [('granite', 20), ('granite_w', 12), ('brick_r', 15), ('brick_b', 9), ('brick_y', 6), ('brick_k', 8), ('tile_w', 12), ('stucco_w', 8), ('stucco_y', 4), ('concrete', 6)]
+VILLA = [('granite', 14), ('granite_w', 12), ('brick_r', 15), ('brick_d', 13), ('brick_b', 8), ('brick_y', 5), ('brick_k', 6), ('tile_w', 9), ('tile_k', 5), ('stucco_w', 5), ('stucco_y', 3), ('concrete', 3), ('board_c', 2)]
 SHOPB = [('granite', 14), ('granite_w', 12), ('granite_d', 10), ('metal_k', 12), ('curtain', 18), ('tile_w', 12), ('concrete', 8), ('brick_k', 8), ('brick_r', 6)]
+NBMIX = {   # 동네별 경향(prep_extra.py 의 NBH)
+    'brick': [('brick_r', 26), ('brick_d', 24), ('brick_b', 14), ('brick_y', 6), ('granite_w', 10), ('granite', 8), ('tile_w', 6), ('brick_k', 4), ('concrete', 2)],
+    'new': [('tile_k', 16), ('granite_w', 22), ('granite', 14), ('board_c', 12), ('stucco_w', 10), ('brick_k', 10), ('brick_d', 8), ('metal_k', 8)],
+    'mixed': [('granite_w', 18), ('granite', 14), ('brick_r', 14), ('brick_d', 14), ('brick_b', 8), ('tile_w', 8), ('tile_k', 8), ('board_c', 6), ('brick_k', 6), ('stucco_w', 4)],
+    'house': [('brick_d', 26), ('brick_r', 22), ('brick_b', 14), ('granite_w', 12), ('stucco_w', 12), ('tile_w', 8), ('brick_y', 6)],
+    'shop': [('granite', 16), ('granite_w', 14), ('brick_r', 14), ('brick_d', 10), ('tile_w', 12), ('granite_d', 8), ('metal_k', 8), ('curtain', 8), ('brick_k', 6), ('concrete', 4)],
+}
 _modern_base = modern
 def modern(bd, idx):
     b0 = S['buildings'][idx - 10000]; k = b0['kind']
     if k in ('roof', 'carport', 'shed', 'garage', 'kiosk', 'hut', 'toilets', 'parking', 'greenhouse'): return _modern_base(bd, idx)   # 작은 부속 건물은 공용 규칙 그대로
     poly = orient(Polygon(bd['rings'][0], bd['rings'][1:]).buffer(0), 1.0)
     if poly.geom_type != 'Polygon' or poly.area < 4: return
-    h = max(3.0, bd['h']); r = random.Random(b0['seed'] * 13 + 5); ar = poly.area; nfl = max(1, round(h / 3.3)); rd = b0.get('rd', ''); mb = MB()
-    civic = k in ('school', 'university', 'college', 'kindergarten', 'hospital', 'public', 'government', 'church', 'civic', 'temple')
-    house = k in ('house', 'detached') or (ar < 120 and nfl <= 2 and r.random() < .55)
+    h = max(3.0, bd['h']); r = random.Random(b0['seed'] * 13 + 5); ar = poly.area; nfl = max(1, round(h / 3.3)); fh = h / nfl; rd = b0.get('rd', ''); nb = b0.get('nb', ''); mb = MB()
+    civic = k in ('school', 'university', 'college', 'kindergarten', 'hospital', 'public', 'government', 'church', 'civic', 'temple'); house = bool(b0.get('house')); mixv = NBMIX.get(nb) or VILLA
     if civic: st, ground = r.choice(['granite_w', 'tile_w', 'brick_r', 'stucco_w', 'brick_y']), 0
-    elif house: st, ground = r.choice(['brick_r', 'stucco_w', 'stucco_y', 'brick_b', 'granite_w', 'tile_w']), 0
+    elif house: st, ground = _pick(r, NBMIX['house']), 0
     elif k in ('commercial', 'retail', 'office', 'bank', 'hotel') or rd == 'major' or h > 20 or ar > 700: st, ground = _pick(r, SHOPB), (1 if (rd or r.random() < .5) else 0)
-    else: st, ground = _pick(r, VILLA), (1 if (rd == 'minor' and r.random() < .28) else 2 if (nfl >= 3 and r.random() < .62) else 0)
-    wall, dark = VST[st][0], VST[st][1]; wallm = mat_flat(wall); ang = math.atan2(*(np.subtract(poly.exterior.coords[1], poly.exterior.coords[0])[::-1]))
-    vwalls(mb, poly, 0, h, st, ground, b0['seed'], h / nfl)
-    if house:   # 경사 지붕 + 처마 밑
-        mb.face([(x, y, h) for x, y in list(orient(poly.buffer(.45, join_style=2), -1.0).exterior.coords)[:-1]], mat_flat(shade(wall, .7))); hiproof(mb, poly, h, r.choice(TILEC))
+    else: st, ground = _pick(r, mixv), (1 if ((rd == 'minor' and r.random() < (.5 if nb == 'shop' else .25))) else 2 if (nfl >= 3 and r.random() < (.75 if nb == 'new' else .58)) else 0)
+    wall, dark, frame, glass = VST[st][:4]; wallm = mat_flat(wall); ang = math.atan2(*(np.subtract(poly.exterior.coords[1], poly.exterior.coords[0])[::-1])); brick = VST[st][4] == 'brick'
+    vwalls(mb, poly, 0, h, st, ground, b0['seed'], fh)
+    if ground == 0: skin(mb, orient(poly.buffer(.07, join_style=2), 1.0), 0.0, lambda x, y: .6, mat_flat('#a29f98' if brick else shade(wall, .8)), 1, 1)   # 밑동의 석재 띠(반지하 높이)
+    if not house and not civic and nfl >= 3 and r.random() < (.42 if brick else .25):   # 돌출창(베이 윈도): 가장 긴 벽에서 2층부터 꼭대기까지 내민 유리 상자, 층마다 창틀 띠
+        cc = list(poly.exterior.coords); e0, e1 = max(zip(cc[:-1], cc[1:]), key=lambda s_: math.hypot(s_[1][0] - s_[0][0], s_[1][1] - s_[0][1])); p0, p1 = np.array(e0), np.array(e1); L = float(np.hypot(*(p1 - p0)))
+        if L >= 7:
+            t = (p1 - p0) / L; n_ = np.array([t[1], -t[0]]); w = min(3.2, L * .34); m0 = p0 + t * L * r.uniform(.3, .7) + n_ * .38; fc = '#e9e6de' if brick else frame
+            obox(mb, m0, t, w / 2, .38, fh, h - .35, mat_flat(shade(glass, 1.35)), mat_flat(fc))
+            for f in range(1, nfl + 1): obox(mb, m0, t, w / 2 + .05, .43, f * fh - .16, min(h - .3, f * fh + .16), mat_flat(fc))
+            for su in (-1, 1): obox(mb, m0 + t * su * (w / 2 - .06), t, .07, .42, fh, h - .35, mat_flat(fc))
+    if b0.get('yard'):   # 단독주택 마당의 담(높이 1.5 m: 벽돌 또는 석재) — 거리뷰의 주택가에서 본 꼴
+        yw = P(b0['yard']).exterior.buffer(.2, cap_style=2, join_style=2); wc = r.choice([wall, '#b9b3a6', '#8f8c86', '#d8d2c4'])
+        for q in parts(yw): q = orient(q, 1.0); skin(mb, q, 0.0, lambda x, y: 1.5, mat_flat(wc), 1, 1); capf(mb, q, lambda x, y: 1.5, mat_flat(shade(wc, .82)))
+    if house or (brick and not civic and 2 <= nfl <= 4 and ar < 420 and r.random() < .36):   # 경사 지붕: 단독주택은 박공·우진각, 벽돌 다세대의 3분의 1 은 꼭대기에 기와 지붕
+        col = r.choice(TILEC if house else ['#5a4a44', '#4d5258', '#6b3f33', '#3f5560', '#7a4a3a'])
+        mb.face([(x, y, h) for x, y in list(orient(poly.buffer(.45, join_style=2), -1.0).exterior.coords)[:-1]], mat_flat(shade(wall, .7)))
+        if house and r.random() < .6: gableroof(mb, poly, h, col, wall)
+        else: hiproof(mb, poly, h, col, over=.45, step=.6 if house else .7, rise=.36 if house else .42)
         return mb.build('b%d' % idx, idx)
     deck = mat_flat(r.choice(DECKC)); inner = poly.buffer(-0.28, join_style=2)
     if inner.geom_type == 'Polygon' and inner.area > 6 and not inner.interiors and not poly.interiors:   # 파라펫
@@ -165,8 +196,22 @@ APT_NEW = [dict(wall='#cfcdc8', acc='#5f646b', base='#8f8b85', glass='#44586b', 
 APT_OLD = [dict(wall='#e9e2cf', acc='#a8553f', base='#cfc6ae', glass='#4a5f70', fr='#f4f1e8', deck='#63ad8c'), dict(wall='#e4e2da', acc='#4f79a8', base='#c9c7bf', glass='#4a5f70', fr='#f6f5f0', deck='#5ba684'),
            dict(wall='#dccfb4', acc='#8a6a4e', base='#c4b79c', glass='#4a5f70', fr='#f4efe2', deck='#9d9c96'), dict(wall='#dfe3da', acc='#5c8f6e', base='#c5cabf', glass='#4a5f70', fr='#f6f5f0', deck='#63ad8c')]
 APM, ABAY, AFL = 28, 3.6, 2.9
+# 거리뷰에서 정문 앞을 본 단지 26곳의 색(벽, 띠·측벽 강조색, 저층부, 옥상 바닥). 옥상 바닥은 위성 사진에서 본 네 곳만 적었다. 나머지 단지는 연대별 기본 색 가운데 하나를 고정 난수로 쓴다.
+CXS = {
+    '서초진흥아파트': dict(wall='#e6dcc0', acc='#a8553f', deck='#b9b6ae'), '롯데캐슬프레미어아파트': dict(wall='#d9d9d6', acc='#4a4d52', base='#b08a7a'), '개포경남아파트': dict(wall='#e9e9e4', acc='#4f5358'),
+    '개포우성4차아파트': dict(wall='#efefea', acc='#9a9c9a', deck='#3f8a63'), '역삼 래미안': dict(wall='#dcdcd8', acc='#8a8d92'), '역삼 e편한세상': dict(wall='#e4e4e0', acc='#8a8d92', base='#a88f7c'),
+    '역삼 푸르지오아파트': dict(wall='#dcdcd8', acc='#4f8a5f'), '래미안대치팰리스1단지아파트': dict(wall='#d6d6d2', acc='#6a6e74'), '대치삼성래미안아파트': dict(wall='#e2e2de', acc='#8f9aa3'),
+    '대치동부센트레빌아파트': dict(wall='#dfe3e6', acc='#c9b27a', glass='#5d87a0'), '개포한신아파트': dict(wall='#ececea', acc='#d9c27a'), '도곡렉슬아파트': dict(wall='#c9c9c6', acc='#6f7377', base='#9a8a7a'),
+    '삼성동힐스테이트1차아파트': dict(wall='#dadad6', acc='#55585e'), '삼성동힐스테이트2차아파트': dict(wall='#dadad6', acc='#55585e'), '역삼 아이파크': dict(wall='#e2e0da', acc='#b79a78'),
+    '개나리 래미안아파트': dict(wall='#e4e4e0', acc='#5d6268'), '삼성래미안2차아파트': dict(wall='#dcdcd8', acc='#5a5e64'), '래미안라클래시아파트': dict(wall='#c5c9cc', acc='#3f444b'),
+    '도곡동삼성래미안아파트': dict(wall='#e6e8ea', acc='#7f95a8'), '래미안도곡카운티아파트': dict(wall='#cfcdc8', acc='#a08f78'), '대치아이파크아파트': dict(wall='#ebe6da', acc='#d9b08a'),
+    '래미안그레이튼3차아파트': dict(wall='#d4d4d2', acc='#8a8d90'), '대치현대아파트': dict(wall='#dcdcda', acc='#6a6d72'), '대치푸르지오써밋아파트': dict(wall='#d9d9d9', acc='#3c3f45'),
+    '역삼럭키아파트': dict(wall='#ececea', acc='#6f8fb0', deck='#3f8a63'), '디에이치대치에델루이': dict(wall='#d9c9b0', acc='#4a4640', base='#b5a48c'), '한보은마아파트': dict(wall='#e9e2cf', acc='#a8553f', deck='#c9cbcc'),
+}
 def apt_scheme(cx, seed, lv):
-    era = cx['era'] if cx else ('old' if lv <= 15 else 'new'); L_ = APT_OLD if era == 'old' else APT_NEW; i = random.Random(cx['seed'] if cx else seed).randrange(len(L_)); return era, f'{era}{i}', L_[i]
+    era = cx['era'] if cx else ('old' if lv <= 15 else 'new'); L_ = APT_OLD if era == 'old' else APT_NEW; i = random.Random(cx['seed'] if cx else seed).randrange(len(L_)); o = CXS.get(cx['name']) if cx else None
+    if o: d = dict(L_[0]); d.update(o); return era, 'x%d%s' % (zlib.crc32(cx['name'].encode()) % 99999, era), d
+    return era, f'{era}{i}', L_[i]
 def apt_face(key, sch, era):
     """앞·뒤 입면(발코니 쪽) 그림: 4칸 × 2층, 칸 3.6 m, 층 2.9 m."""
     bw, fh = int(ABAY * APM), int(AFL * APM); wall, acc, glass, fr = sch['wall'], sch['acc'], sch['glass'], sch['fr']
@@ -363,11 +408,32 @@ def ltower(b, idx, cfg):
     if LB: _lobby(mb, poly, LB, cfg['glass'], pc, cfg['line'])
     skin(mb, poly, LB, lambda x, y: h, gm, tw, th); capf(mb, poly, lambda x, y: h, mat_flat('#9a9c9e')); _parapet(mb, poly, h, pc)
     if cfg.get('crownband'): cb = orient(poly.buffer(.3, join_style=2), 1.0); skin(mb, cb, h - cfg['crownband'], lambda x, y: h + 1.3, mat_flat(pc), 1, 1)
-    c, ax_, Lx, Ly, _ = mrr_axes(poly); core = poly.buffer(-max(3.0, 0.26 * Ly), join_style=2); up_ = None
-    if core.geom_type == 'Polygon' and core.area > 15: skin(mb, orient(core, 1.0), h, lambda x, y: h + 4.5, mat_flat('#a9aaa8'), 1, 1); capf(mb, core, lambda x, y: h + 4.5, mat_flat('#8c8e90')); up_ = (core, h + 4.5)
-    heli = h >= 100 and up_ is not None and core.area > 500
-    if heli: heli_std(mb, c, ax_, up_[1], Ly, r)
-    roof_std(mb, poly, h, up_[0] if up_ else None, up_[1] if up_ else h, heli, b['seed'])
+    tp, ht = poly, h
+    for _k in range(cfg.get('tiers', 0)):   # 층층이 물러나는 꼭대기(강남파이낸스센터)
+        q = tp.buffer(-2.6, join_style=2)
+        if q.geom_type != 'Polygon' or q.area < 300: break
+        q = orient(q, 1.0); z1 = ht + 2.4; skin(mb, q, ht, lambda x, y, z1=z1: z1, gm, tw, th); capf(mb, q, lambda x, y, z1=z1: z1, mat_flat('#9a9c9e')); _parapet(mb, q, z1, pc, .8); tp, ht = q, z1
+    c, ax_, Lx, Ly, _ = mrr_axes(tp); nv_ = np.array([-ax_[1], ax_[0]]); hv = cfg.get('heli', 'auto'); flat = bool(cfg.get('heliflat')); up_ = None
+    core = Polygon() if flat else tp.buffer(-max(3.0, 0.26 * Ly), join_style=2)
+    if core.geom_type == 'Polygon' and core.area > 15: skin(mb, orient(core, 1.0), ht, lambda x, y: ht + 4.5, mat_flat('#a9aaa8'), 1, 1); capf(mb, core, lambda x, y: ht + 4.5, mat_flat('#8c8e90')); up_ = (core, ht + 4.5)
+    heli = (ht >= 100 and up_ is not None and core.area > 500) if hv == 'auto' else bool(hv) and not flat and up_ is not None
+    if heli and hv == 'auto': heli_std(mb, c, ax_, up_[1], Ly, r)
+    elif heli: helipad(mb, c, ax_, up_[1], min(10.0, .34 * Ly), hv[0], hv[1], 'circle', .5)
+    roof_std(mb, tp, ht, up_[0] if up_ else None, up_[1] if up_ else ht, heli, b['seed'])
+    if cfg.get('deck'):   # 위성 사진에서 본 옥상 바닥 색
+        inn = tp.buffer(-1.5, join_style=2); inn = inn.difference(up_[0].buffer(.05)) if up_ else inn
+        for q in parts(inn):
+            if q.area > 6: capf(mb, orient(q, 1.0), lambda x, y: ht + .09, mat_flat(cfg['deck']))
+    if flat and hv:   # 바닥에 바로 그린 헬리패드(메리츠타워: 초록 바닥의 흰 원) + 남쪽 끝 냉각탑 줄
+        hc = np.array(c) + ax_ * Lx * .12; helipad(mb, hc, ax_, ht + .1, min(9.0, .3 * Ly), hv[0], hv[1], 'circle', .08)
+        for i_ in range(3):
+            for j_ in (-1, 1): _cooler(mb, np.array(c) - ax_ * (Lx * .3 + i_ * 2.6 - 2.6) + nv_ * j_ * 2.2, ax_, ht + .05, 1.0, 1.3)
+    if cfg.get('solar'):   # 옥상 태양광 판(센터필드): 한쪽 절반에 줄지어
+        okp = tp.buffer(-3.0); okp = okp.difference(up_[0].buffer(1.5)) if up_ else okp
+        for u in np.arange(-Lx / 2, Lx / 2, 4.6):
+            for v in np.arange(-Ly / 2, Ly / 2, 2.3):
+                q = np.array(c) + ax_ * u + nv_ * v
+                if okp.contains(Point(*q).buffer(1.6)): obox(mb, q, ax_, 2.0, .85, ht + .12, ht + .5, mat_flat('#2f4a78'), mat_flat('#3a5a92'))
     toonify(mb.build('b%d' % idx, idx))
 LMB.update({k: ltower for k in ('trade', 'asem', 'parnas', 'gfc', 'samsung_e', 'samsung_c', 'samsung_l', 'cf_e', 'cf_w', 'meritz', 'glass')})   # GS타워는 옥상 원통 간판이 있어 그대로 둔다
 
@@ -384,11 +450,13 @@ def posco(b, idx, cfg):
     path, gw, gh = grid_tex('posco', cfg['glass'], cfg['line'], 1.5, 4.1, sp=.14, spc='#9cc4c2'); gm = mat_tex(path, 'gposco'); _lobby(mb, tw_, 10.0, cfg['glass'], '#cfd6d6', cfg['line'])
     skin(mb, tw_, 10.0, lambda x, y: H, gm, gw, gh); capf(mb, tw_, lambda x, y: H, mat_flat('#9a9c9e')); _parapet(mb, tw_, H, '#b9c4c4')
     cb = orient(tw_.buffer(.25, join_style=2), 1.0); skin(mb, cb, H - 4.6, lambda x, y: H + 1.3, mat_flat(shade(cfg['glass'], .72)), 1, 1)   # 꼭대기 짙은 띠
-    core = tw_.buffer(-9.0, join_style=2)
-    if core.geom_type == 'Polygon' and core.area > 30: skin(mb, orient(core, 1.0), H, lambda x, y: H + 5.0, mat_flat('#a9aaa8'), 1, 1); capf(mb, core, lambda x, y: H + 5.0, mat_flat('#8c8e90'))
-    tc_, tax, tLx, tLy, _m = mrr_axes(tw_)
-    if east and core.geom_type == 'Polygon': heli_std(mb, tc_, tax, H + 5.0, tLy, random.Random(5))
-    roof_std(mb, tw_, H, core if core.geom_type == 'Polygon' else None, H + 5.0, east, b['seed'])
+    # 옥상(위성 사진): 서관은 초록 바닥 한쪽에 밝은 회색 헬리패드 단 + 배관 줄, 동관은 초록 바닥에 냉각탑 줄(헬리패드 없음)
+    core = tw_.buffer(-9.0, join_style=2); tc_, tax, tLx, tLy, _m = mrr_axes(tw_); okc = core.geom_type == 'Polygon' and core.area > 30
+    if okc: skin(mb, orient(core, 1.0), H, lambda x, y: H + 5.0, mat_flat('#c9cbc8' if not east else '#a9aaa8'), 1, 1); capf(mb, core, lambda x, y: H + 5.0, mat_flat('#c2c5c7' if not east else '#8c8e90'))
+    if not east and okc: helipad(mb, tc_, tax, H + 5.0, min(10.0, .34 * tLy), '#c9cbc8', '#ffffff', 'circle', .4)
+    roof_std(mb, tw_, H, core if okc else None, H + 5.0, not east, b['seed'])
+    for q in parts(tw_.buffer(-1.5, join_style=2).difference(core.buffer(.05)) if okc else tw_.buffer(-1.5)):
+        if q.area > 6: capf(mb, orient(q, 1.0), lambda x, y: H + .09, mat_flat('#5aa583'))
     sp_ = c + d * (D - 5.5) + wv * (Wd - 1.2); obox(mb, sp_, d, 5.0, 2.2, 0.0, H + 4.5, mat_flat('#b9b5aa'), mat_flat('#a3a096'))   # 아트리움 쪽 앞 모서리의 석재 세로 기둥
     for z_ in np.arange(12.0, H, 8.2): obox(mb, sp_, d, 5.06, 2.26, z_, z_ + .35, mat_flat('#9d998f'))
     for q in parts(rear):   # 뒤쪽 저층부: 석재 띠 + 유리

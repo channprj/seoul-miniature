@@ -1,27 +1,27 @@
 # 테헤란로 지역 빌더. ../yeouido/gen_area.py 가 여의도 lm_build.py 다음에 exec 로 읽는다(같은 전역: MB, mat_flat, grid_tex, gtower, crystal, toonify, LMC, LMB, LMN …).
 # 높이·윤곽은 OSM. 색·입면 구성은 네이버 지도 거리뷰를 눈으로 보고 맞췄다(2026-11-12: 위워크타워, 트레이드타워, 아셈타워, 코엑스, 파르나스타워, 글라스타워, DB금융센터, 강남파이낸스센터, 포스코센터, GT타워, 센터필드, GS타워, 삼성 서초사옥).
-# 거리뷰에서 잘 안 보인 메리츠타워와 모든 옥상·꼭대기 형태는 추정이다. 사진은 저장소에 넣지 않았다. 간판 글자는 거리뷰에서 읽은 것만 signs.py 에서 붙인다(위워크타워는 아래 wework()).
+# 옥상은 네이버 지도 위성 사진과 대조했다(2026-11-13: 헬리패드 유무와 바닥 색, 강남파이낸스센터의 층층이 물러나는 꼭대기, 센터필드의 태양광 판, 메리츠타워·트레이드타워의 초록 바닥 — detail.py 의 ltower). 설비의 정확한 자리는 맞추지 않았다. 사진은 저장소에 넣지 않았다. 간판 글자는 거리뷰에서 읽은 것만 signs.py 에서 붙인다(위워크타워는 아래 wework()).
 # 삼성역 광장(원형 광장·내리막 계단·조형탑·화단·공사 야적장)은 plaza_samseong.py 에 따로 있고, 이 파일 끝에서 읽는다.
 KBSF.clear(); LMC.clear(); LMB.clear(); LMN.clear()   # 여의도 전용 표(건물 순번·이름)를 비운다
 
 # ---------------- 격자 유리 타워 설정(gtower / crystal) ----------------
 LMC.update({
     'wework': dict(glass='#6fa0a8', line='#4a747c', flh=4.0, bay=1.5, sp=.16),                                              # 위워크타워(테헤란로 427): 석재 저층부 + 청록 유리 타워(아래 wework())
-    'trade': dict(glass='#64798f', line='#3c4b5c', flh=4.1, bay=1.2, sp=.20, spc='#44566a', lobby=9.0, kit=1),               # 트레이드타워: 회청색 반사 유리, 세로 결. 계단꼴 윤곽은 OSM 파트 그대로
-    'asem': dict(glass='#6c8197', line='#44586c', flh=4.1, bay=1.5, sp=.36, spc='#aeb8c1', lobby=9.0, crownband=3.0, kit=3),  # 아셈타워: 청회색 유리 + 밝은 가로 띠
-    'parnas': dict(glass='#6d7f90', line='#44535f', flh=4.2, bay=1.5, sp=.20, spc='#9ba8b3', lobby=10.0, kit=2),             # 파르나스타워: 짙은 청회색 유리
-    'gfc': dict(glass='#5d8fbf', line='#3d6791', flh=4.3, bay=1.5, sp=.16, lobby=10.0, crownband=4.0, kit=4),                # 강남파이낸스센터: 맑은 파란 유리 커튼월
+    'trade': dict(glass='#64798f', line='#3c4b5c', flh=4.1, bay=1.2, sp=.20, spc='#44566a', lobby=9.0, kit=1, heli=('#4f9a78', '#f6f6f1'), deck='#d9dcdc'),               # 트레이드타워: 회청색 반사 유리, 세로 결. 계단꼴 윤곽은 OSM 파트 그대로
+    'asem': dict(glass='#6c8197', line='#44586c', flh=4.1, bay=1.5, sp=.36, spc='#aeb8c1', lobby=9.0, crownband=3.0, kit=3, heli=('#4a4f55', '#f1f1ec'), deck='#4f555b'),  # 아셈타워: 청회색 유리 + 밝은 가로 띠
+    'parnas': dict(glass='#6d7f90', line='#44535f', flh=4.2, bay=1.5, sp=.20, spc='#9ba8b3', lobby=10.0, kit=2, heli=('#3f464d', '#f1f1ec'), deck='#3f464d'),             # 파르나스타워: 짙은 청회색 유리
+    'gfc': dict(glass='#5d8fbf', line='#3d6791', flh=4.3, bay=1.5, sp=.16, lobby=10.0, kit=4, heli=False, tiers=3, deck='#8f9296'),                # 강남파이낸스센터: 맑은 파란 유리 커튼월
     'db': dict(glass='#5c7389', line='#3b4e60', flh=4.2, rise=14, sdir=(0.4, 0.9), facets=[(0.8, 0.6, .35, 9.0), (-0.75, -0.66, .55, 7.0)]),   # DB금융센터: 짙은 청회색 유리, 접힌 면(면의 방향·깊이는 추정)
     'posco_e': dict(glass='#6fa4a6', line='#4a7b7e', flh=4.1, bay=1.5, sp=.30, spc='#cfd6d6', lobby=9.0, kit=3),             # 포스코센터: 청록 유리 + 은색 띠(두 동)
     'posco_w': dict(glass='#6fa4a6', line='#4a7b7e', flh=4.1, bay=1.5, sp=.30, spc='#cfd6d6', lobby=9.0, kit=3),
-    'samsung_e': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=4),          # 삼성 서초사옥 세 동: 밝은 하늘빛 유리 + 흰 가로 띠
-    'samsung_c': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=3),
-    'samsung_l': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=2),
-    'cf_e': dict(glass='#5d7186', line='#2f3b47', flh=4.3, bay=1.0, sp=.10, lobby=10.0, kit=3),                               # 센터필드 두 동: 짙은 청회색 유리, 촘촘한 세로 멀리언
-    'cf_w': dict(glass='#5d7186', line='#2f3b47', flh=4.3, bay=1.0, sp=.10, lobby=10.0, kit=3),
+    'samsung_e': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=4, heli=False, deck='#c9cbcc'),          # 삼성 서초사옥 세 동: 밝은 하늘빛 유리 + 흰 가로 띠
+    'samsung_c': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=3, heli=False, deck='#c9cbcc'),
+    'samsung_l': dict(glass='#a3bdd2', line='#7896ae', flh=4.2, bay=1.5, sp=.34, spc='#e6ecef', lobby=10.0, kit=2, heli=False, deck='#c9cbcc'),
+    'cf_e': dict(glass='#5d7186', line='#2f3b47', flh=4.3, bay=1.0, sp=.10, lobby=10.0, kit=3, heli=False, deck='#d0d2d3', solar=True),                               # 센터필드 두 동: 짙은 청회색 유리, 촘촘한 세로 멀리언
+    'cf_w': dict(glass='#5d7186', line='#2f3b47', flh=4.3, bay=1.0, sp=.10, lobby=10.0, kit=3, heli=False, deck='#d0d2d3', solar=True),
     'gs': dict(glass='#4b5661', line='#2c343c', flh=4.2, bay=1.5, sp=.20, spc='#98a1a8', lobby=10.0, crownband=3.0, kit=3),  # GS타워: 짙은 회색 반사 유리 + 금속 띠
-    'meritz': dict(glass='#6f8fae', line='#4d6b88', flh=4.2, bay=1.5, sp=.20, lobby=9.0, kit=2),
-    'glass': dict(glass='#768a9b', line='#4d5f6e', flh=3.7, bay=1.5, sp=.30, spc='#aab3ba', lobby=8.0, kit=2),               # 글라스타워: 둥근 평면의 회청색 유리 + 가로 띠
+    'meritz': dict(glass='#6f8fae', line='#4d6b88', flh=4.2, bay=1.5, sp=.20, lobby=9.0, kit=2, heli=('#4f9a78', '#f6f6f1'), heliflat=True, deck='#4f9a78'),
+    'glass': dict(glass='#768a9b', line='#4d5f6e', flh=3.7, bay=1.5, sp=.30, spc='#aab3ba', lobby=8.0, kit=2, heli=('#8d949c', '#f1f1ec'), deck='#9a9c9e'),               # 글라스타워: 둥근 평면의 회청색 유리 + 가로 띠
     'gt': dict(glass='#6f9cc0', line='#4c7396', flh=4.4, bay=1.6, sp=.14, spc='#e9eef0'),                                    # GT타워: 물결치는 유리면
     'coex': dict(),
 })
@@ -40,7 +40,7 @@ def gt_wave(b, idx, cfg):
         for i in range(n):
             a, q, q2, a2 = R_[k][i], R_[k][(i + 1) % n], R_[k + 1][(i + 1) % n], R_[k + 1][i]
             mb.face([a, q, q2, a2], gm, [(s0[i] / tw, a[2] / th), (s0[i + 1] / tw, q[2] / th), (s0[i + 1] / tw, q2[2] / th), (s0[i] / tw, a2[2] / th)])
-    top = Polygon([p[:2] for p in R_[-1]]).buffer(0); capf(mb, top, lambda x, y: H, mat_flat('#9a9c9e')); _parapet(mb, orient(top, 1.0), H, cfg['spc']); roof_kit(mb, top, H, random.Random(b['seed']), 3)
+    top = Polygon([p[:2] for p in R_[-1]]).buffer(0); capf(mb, top, lambda x, y: H, mat_flat('#9a9c9e')); _parapet(mb, orient(top, 1.0), H, cfg['spc']); tc_, tax_, _tx, tLy_, _m = mrr_axes(top); capf(mb, top.buffer(-1.2), lambda x, y: H + .08, mat_flat('#c2c4c3')); mb.box((tc_[0], tc_[1], H), 9.0, 7.5, 3.2, mat_flat('#b9bcba'), math.atan2(tax_[1], tax_[0]), mat_flat('#c9cbc8')); helipad(mb, tc_, tax_, H + 3.2, 6.5, '#c9cbc8', '#ffffff', 'circle', .3)   # 위성 사진: 밝은 회색 바닥, 가운데 단 위의 밝은 헬리패드
     toonify(mb.build('gt%d' % idx, idx))
 
 def coex(b, idx, cfg):

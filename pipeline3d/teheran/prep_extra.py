@@ -185,14 +185,15 @@ S['trees'] += [[x, y, r, 0] for x, y, r in _new]
 print('samseong plaza: pave', round(pave.area), 'yard', round(yard.area), 'green', round(green.area), 'trees +', len(_new))
 
 # ---- 아파트 단지: 동을 단지(landuse=residential 면)로 묶고, 단지 마당(정원·지상 주차장·둘레 화단)과 나무, 출입구 자리를 더한다 ----
-# 거리뷰(2018–2026 촬영분)에서 본 것: 2000년대 이후 단지(도곡렉슬·힐스테이트·래미안·e편한세상)는 지상이 정원이고 차는 지하로 들어간다. 1970–80년대 단지(은마·개포우성)는 동 앞이 지상 주차장이고
+# 거리뷰(2018–2026 촬영분, 단지 26곳의 정문 앞)와 위성 사진(옛 단지 4곳)에서 본 것: 2000년대 이후 단지(도곡렉슬·힐스테이트·래미안·e편한세상)는 지상이 정원이고 차는 지하로 들어간다. 1970–80년대 단지(은마·개포우성)는 동 앞이 지상 주차장이고
 # 둘레와 동 옆에 큰 나무가 줄지어 있다. 단지의 연대는 층수 중앙값으로 가른다(15층 이하 = 옛 단지, 추정). 마당 배치(화단 폭, 주차 띠 자리)는 규칙으로 만든 것이라 실제 조경과 다르다.
 import re, shapely
 B = S['buildings']; APTK = ('apartments', 'residential', 'dormitory', 'officetel')
 bpoly = [Polygon(b['rings'][0]).buffer(0) for b in B]; btree = STRtree(bpoly)
 DRV = [(LineString(r['pts']), r) for r in S['roads'] if r['cls'] in ('major', 'minor') and not r['tunnel'] and not r['bridge']]; drt = STRtree([l for l, _ in DRV])
+MAJ = [(l, r) for l, r in DRV if r['cls'] == 'major']; mjt = STRtree([l for l, _ in MAJ])
 for b, bp in zip(B, bpoly):   # 건물이 면한 길(12 m 안): 큰길가는 상가·사무실, 이면도로는 빌라·주택으로 꾸민다(lm_build 의 detail.py)
-    k = drt.nearest(bp); b['rd'] = (DRV[k][1]['cls'] if DRV[k][0].distance(bp) - DRV[k][1]['w'] / 2 < 12 else '')
+    k = drt.nearest(bp); b['rd'] = ('major' if any(MAJ[j][0].distance(bp) - MAJ[j][1]['w'] / 2 < 14 for j in mjt.query(bp.buffer(34))) else DRV[k][1]['cls'] if DRV[k][0].distance(bp) - DRV[k][1]['w'] / 2 < 12 else '')   # 큰길이 14 m 안이면 큰길가(가장 가까운 길이 뒤쪽 진입로여도)
     m = re.search(r'(\d{1,4}|[A-Z])\s*동?$', b['name']); b['no'] = m.group(1) if m else ''
 res = [(Polygon(a['rings'][0], a['rings'][1:]).buffer(0), a['name']) for a in S['areas'].get('resi_land', [])]; rtree = STRtree([q for q, _ in res]) if res else None; grp = {}
 for b, bp in zip(B, bpoly):
@@ -219,8 +220,9 @@ for k, bs in sorted(grp.items()):
         for b in bs:
             q = Polygon(b['rings'][0]); mc = np.array(q.minimum_rotated_rectangle.exterior.coords); e0, e1 = mc[1] - mc[0], mc[2] - mc[1]
             if np.hypot(*e0) < np.hypot(*e1): e0, e1 = e1, e0
-            Lx_, Ly_ = np.hypot(*e0), np.hypot(*e1); ax = e0 / Lx_; nv = np.array([-ax[1], ax[0]]); nv = nv if nv[1] < 0 else -nv; c = np.array(q.centroid.coords[0]) + nv * (Ly_ / 2 + 4.0 + 8.5)
-            strips.append(Polygon([tuple(c + ax * su * (Lx_ / 2 - 1) + nv * sv * 8.5) for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]))
+            Lx_, Ly_ = np.hypot(*e0), np.hypot(*e1); ax = e0 / Lx_; nv = np.array([-ax[1], ax[0]]); nv = nv if nv[1] < 0 else -nv
+            for sg, hw in ((1, 8.5), (-1, 5.5)):   # 남쪽은 두 줄 주차 + 통로(17 m), 북쪽(복도·출입구 쪽)은 한 줄 + 통로(11 m) — 위성 사진의 은마·개포우성·역삼럭키·서초진흥
+                c = np.array(q.centroid.coords[0]) + nv * sg * (Ly_ / 2 + 3.0 + hw); strips.append(Polygon([tuple(c + ax * su * (Lx_ / 2 - 1) + nv * sv * hw) for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]))
         lots = []; used = apron
         for st in strips:
             g = st.intersection(yard).difference(used)
@@ -243,6 +245,29 @@ for k, bs in sorted(grp.items()):
             s_ = l.project(q); a_, b_ = l.interpolate(max(0, s_ - 2)), l.interpolate(min(l.length, s_ + 2)); gates.append([round(q.x, 2), round(q.y, 2), round(math.atan2(b_.y - a_.y, b_.x - a_.x), 3), r['w'], 0])
     for g in sorted(gates, key=lambda g: -g[3])[:2]: g[4] = 1
     S['complexes'].append({'name': nm, 'rings': rings(p, .3), 'era': era, 'seed': seed, 'lv': lv, 'n': len(bs), 'gates': gates})
+# ---- 주택가: 거리뷰에서 본 동네별 외장 경향, 단독주택의 마당(담·정원수) ----
+# 2026-11-13 에 본 골목 19곳(경도, 위도, 경향). brick = 붉은·고동색 벽돌 다세대가 대부분, new = 흰 석재 판·짙은 타일·송판 노출 콘크리트의 새 다세대, house = 박공지붕 벽돌 단독주택과 담장·정원수,
+# shop = 학원·가게가 든 근린 건물, mixed = 섞임. 본 자리에서 380 m 안의 건물이 그 경향을 따르고, 그 밖은 섞인 기본값이다(건물 하나하나를 맞춘 것이 아니다).
+NBH = [(127.04386, 37.49603, 'new'), (127.05326, 37.49874, 'shop'), (127.05341, 37.5173, 'house'), (127.02945, 37.51027, 'mixed'), (127.04457, 37.51277, 'mixed'), (127.0442, 37.50566, 'brick'), (127.03523, 37.49626, 'brick'),
+       (127.06174, 37.51745, 'house'), (127.05274, 37.51046, 'brick'), (127.02955, 37.5033, 'house'), (127.04424, 37.52228, 'brick'), (127.05853, 37.50082, 'brick'), (127.03846, 37.50347, 'new'), (127.03891, 37.51979, 'mixed'),
+       (127.0385, 37.4965, 'shop'), (127.0330, 37.5090, 'shop'), (127.0500, 37.5140, 'brick'), (127.0570, 37.5020, 'mixed'), (127.0445, 37.5025, 'shop')]
+nbxy = np.array([tm5186(lo, la) for lo, la, _ in NBH], float); nyard = 0; ntr = len(S['trees'])
+for i, (b, bp) in enumerate(zip(B, bpoly)):
+    c = bp.centroid; d = np.hypot(nbxy[:, 0] - c.x, nbxy[:, 1] - c.y); j = int(d.argmin()); b['nb'] = NBH[j][2] if d[j] < 380 else ''
+    rr = random.Random(b['seed'] * 7 + 3); nfl = max(1, round(max(3.0, b['h']) / 3.3)); hs = b['nb'] == 'house'
+    b['house'] = bool(b['kind'] in ('house', 'detached') or (b['kind'] in ('yes', 'residential') and b['rd'] != 'major' and b['area'] < (170 if hs else 120) and nfl <= 2 and rr.random() < (.8 if hs else .5)))
+    if not b['house'] or b['area'] < 40: continue
+    lot = bp.buffer(2.6, join_style=2).difference(unary_union([bpoly[k].buffer(.5) for k in btree.query(bp.buffer(3.2)) if k != i] + [Point(0, 0).buffer(.01)])).difference(roadsurf)
+    lot = next((q for q in (lot.geoms if hasattr(lot, 'geoms') else [lot]) if q.geom_type == 'Polygon' and q.buffer(.1).contains(bp.representative_point())), None)
+    if lot is None or lot.area < bp.area * 1.3 or lot.interiors: continue
+    b['yard'] = rings(lot, .2); nyard += 1; gdn = lot.buffer(-.9).difference(bp.buffer(1.1))   # 담 안 마당의 정원수 한두 그루
+    for _ in range(rr.choice([1, 1, 2])):
+        if gdn.is_empty: break
+        x0, y0, x1, y1 = gdn.bounds
+        for _t in range(12):
+            q = Point(rr.uniform(x0, x1), rr.uniform(y0, y1)); kk = (round(q.x / 2.0), round(q.y / 2.0))
+            if gdn.contains(q) and kk not in tkey: tkey.add(kk); S['trees'].append([round(q.x, 2), round(q.y, 2), round(rr.uniform(1.7, 2.5), 2), 0]); break
+print('houses', sum(1 for b in B if b['house']), 'with yard', nyard, 'yard trees +', len(S['trees']) - ntr, 'frontage major', sum(1 for b in B if b['rd'] == 'major'))
 print('complexes', len(S['complexes']), 'old', sum(c['era'] == 'old' for c in S['complexes']), 'apartments in complexes', sum(1 for b in B if 'cx' in b), 'garden trees +', len(S['trees']) - nt0)
 
 S['extra'] = 'teheran/prep_extra.py'

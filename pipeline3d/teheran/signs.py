@@ -74,7 +74,7 @@ if b:
 b, g = _bp('w562011101')   # GS타워: 옥상 동쪽 끝의 흰 원통 + 청록 띠의 'GS'(세 번 되풀이해 어느 쪽에서도 읽힌다)
 if b:
     _c, ax_, Lx_, _ly, _ = mrr_axes(g); e_ = ax_ if ax_[0] > 0 else -ax_; cc = np.array(_c) + e_ * Lx_ * .2; H_ = b['h']; R_ = 5.6
-    smb.cyl((cc[0], cc[1], H_), R_, 8.5, mat_flat('#e6ecef'), mat_flat('#c9cdd0'), n=28)
+    smb.cyl((cc[0], cc[1], H_), R_, 8.5, mat_flat('#e6ecef'), mat_flat('#4f9a78'), n=28); _annulus(smb, cc, H_ + 8.56, R_ * .42, R_ * .56, mat_flat('#f6f6f1')); _annulus(smb, cc, H_ + 8.56, R_ * .86, R_ * .96, mat_flat('#f6f6f1'))   # 위성 사진: 원통 위는 초록 헬리패드(흰 원)
     pth, asp = sign_png('gs', 'GS', '#f6f5f0', '#4f9070', SANSI, mx=1.25); wall_strip(smb, Point(*cc).buffer(R_, 16), (0, -1), H_ + 4.2, H_ + 8.3, mat_tex(pth, 'sg_gs'), w=2 * math.pi * (R_ + .3), off=.3, step=.6, reps=3.0)
 b, g = _bp('w74013224')    # 현대백화점 무역센터점: 테헤란로 쪽 벽 동쪽 끝의 세로 전광판(벽에서 조금 띄워 건다) + 벽 위쪽 'HYUNDAI'
 if b:
