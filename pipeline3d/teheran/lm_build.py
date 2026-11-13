@@ -307,5 +307,6 @@ for _k, _a in enumerate(AR.get('dirt', [])):
     if mb.f: mb.build('site%d' % _k, 9700 + _k); META[9700 + _k] = 'landmark:site_' + kind
 exec(compile(open(AREA + '/signs.py', encoding='utf-8').read(), AREA + '/signs.py', 'exec'))   # 랜드마크 간판·전광판
 exec(compile(open(AREA + '/detail.py', encoding='utf-8').read(), AREA + '/detail.py', 'exec'))   # 일반 건물 세부(빌라·주택, 아파트 동과 단지, 일반 타워, 포스코센터)
+exec(compile(open(AREA + '/parnas.py', encoding='utf-8').read(), AREA + '/parnas.py', 'exec'))   # 파르나스 호텔 현관동·캐노피·깃대·정원, 파르나스타워 세로 전광판
 exec(compile(open(AREA + '/plaza_samseong.py', encoding='utf-8').read(), AREA + '/plaza_samseong.py', 'exec'))   # 삼성역 광장(내리막 계단 자리는 _pits 에 더한다)
 if _pits: WATERc = unary_union([WATERc] + _pits)   # 굴착 자리는 지면 판에서 도려낸다(gen_area 가 물가처럼 5.5 m 비탈을 두른다). 텍스처는 그대로 흙색

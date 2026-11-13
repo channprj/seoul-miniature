@@ -82,7 +82,7 @@ if b:
     half = max(abs((np.array(q) - c) @ e_) for q in g.exterior.coords); H_ = b['h']; o1 = c + e_ * (half - 8.0)
     wall_strip(smb, g, dv, 7.0, H_ - 1.5, mat_tex(screen_png('hyundai', 96, 236, ['#b6573c', '#efbe3e', '#fdfdf3', '#c78169', '#984c2f', '#6ea8dd'], 11), 'sc_hyundai'), w=10.0, off=1.2, org=o1)
     wall_strip(smb, g, dv, 6.3, H_ - .8, mat_flat('#22272b'), w=11.0, off=.9, org=o1)
-    pth, asp = sign_png('thehyundai', 'THE HYUNDAI', '#67523e', '#dbc197', SANS, track=.22); wall_strip(smb, g, dv, H_ - 6.4, H_ - 2.4, mat_tex(pth, 'sg_hyundai'), aspect=asp, off=.4, org=c - e_ * half * .45)
+    pth, asp = sign_png('thehyundai', 'THE HYUNDAI', '#3a332b', '#b9a98c', SANS, track=.22); wall_strip(smb, g, dv, H_ - 6.4, H_ - 2.4, mat_tex(pth, 'sg_hyundai'), aspect=asp, off=.4, org=c - e_ * half * .45)
 b, g = _bp('w74056387')    # 코엑스 아티움: 삼성역 사거리 쪽 모퉁이를 감싼 전광판(지붕선 위로 솟는다. 높이 22 m 는 거리뷰 비례로 잡은 추정)
 if b:
     st = next(s['xy'] for s in S['transit']['stations'] if s['name'] == '삼성'); c = g.centroid.coords[0]; dv = (st[0] - c[0], st[1] - c[1])

@@ -18,6 +18,31 @@ C = Cam('T')
 BOARD = Polygon([C.unproj(X, Y, 0)[:2] for X, Y in ((0, 0), (C.W, 0), (C.W, C.H), (0, C.H))])
 REG = BOARD.buffer(420)   # 도로·교량을 남길 범위
 
+# ---- 간선 도로 폭: OSM 에 차로 수 태그가 없는 구간은 prep.py 가 한 방향 3차로(10.7 m)로 잡아, 실제로는 차도인 길가가 빈 바닥으로 남았다 ----
+# 한 방향 차로 수(위성 화면에서 차로를 세어 본 값, 구간마다 조금씩 다른 것은 대표값으로): 양방향이 한 선으로 그려진 구간은 두 배
+LANES = {'테헤란로': 5, '강남대로': 5, '영동대로': 7, '언주로': 4, '도산대로': 5, '남부순환로': 5, '삼성로': 3, '선릉로': 3, '논현로': 3, '봉은사로': 3, '학동로': 3, '도곡로': 3, '압구정로': 3, '올림픽로': 4, '역삼로': 2, '서초대로': 4, '양재대로': 4}
+nw = 0
+for r in S['roads']:
+    n = LANES.get(r['name'])
+    if not n or r['cls'] != 'major' or r['hw'].endswith('_link'): continue
+    n = n if r['oneway'] else 2 * n
+    if n > r['lanes']: r['lanes'] = n; r['w'] = round(n * 3.3 + .8, 1); nw += 1
+_dr = [(LineString(r['pts']), r) for r in S['roads'] if r['cls'] in ('major', 'minor') and not r['tunnel'] and not r['bridge']]; _dt = STRtree([l for l, _ in _dr])
+for cr in S['cross']: k = _dt.nearest(Point(cr[0], cr[1])); cr[3] = _dr[k][1]['w']   # 횡단보도 너비도 넓어진 차도에 맞춘다
+_rs = unary_union([l.buffer(r['w'] / 2 + .6, cap_style=2) for l, r in _dr if r['cls'] == 'major']); import shapely as _sh
+_T = np.array(S['trees']); _in = _sh.contains_xy(_rs, _T[:, 0], _T[:, 1]); S['trees'] = [t for t, k in zip(S['trees'], _in) if not k]; _n0 = len(S['trees'])
+_bu = unary_union([Polygon(b['rings'][0]).buffer(1.2) for b in S['buildings']] + [_rs]); _sh.prepare(_bu); _rnd = random.Random(77)
+for l, r in _dr:   # 넓힌 길의 새 가장자리에 가로수(9 m 간격). 마주 보는 차도·건물 자리는 뺀다
+    if r['name'] not in LANES or r['cls'] != 'major' or l.length < 25: continue
+    for side in (1, -1):
+        try: off = l.offset_curve(side * (r['w'] / 2 + 2.4))
+        except Exception: continue
+        for g in ([off] if off.geom_type == 'LineString' else list(getattr(off, 'geoms', []))):
+            if g.is_empty or g.length < 8: continue
+            pts_ = _sh.line_interpolate_point(g, np.arange(4.0, g.length - 3.0, 9.0)); xs_, ys_ = _sh.get_x(pts_), _sh.get_y(pts_); ok = ~_sh.contains_xy(_bu, xs_, ys_)
+            S['trees'].extend([[round(float(x), 2), round(float(y), 2), round(_rnd.uniform(2.2, 3.2), 2), 1] for x, y in zip(xs_[ok], ys_[ok])])
+print('roads widened', nw, 'trees on widened roads removed', int(_in.sum()), 'street trees +', len(S['trees']) - _n0)
+
 # ---- 건물 보충: OSM 에 건물이 비어 있는 블록을 Overture 건물 테마의 비 OSM 풋프린트(East Asian Buildings, CC BY 4.0)로 채운다. 높이는 면적으로 추정 ----
 B = S['buildings']
 OV = 'osm/overture_buildings.geojson'   # uvx overturemaps download --bbox=서,남,동,북 -f geojson --type=building -o osm/overture_buildings.geojson
@@ -61,6 +86,8 @@ for b in B:
     rnd = random.Random(b['seed']); big = r['name'] in ('테헤란로', '강남대로', '영동대로')
     fl = rnd.choice([12, 14, 15, 17, 18, 20] if big and b['area'] > 500 else [8, 10, 12, 14] if big or b['area'] > 600 else [5, 6, 7, 8, 10])
     b['h'], b['lv'], b['src'] = round(fl * 3.9 + 3, 1), fl, 'est_frontage'; nfix += 1
+for b in B:   # 현대백화점 무역센터점: OSM 높이 37 m 는 낮다. 지상 10층 판매 시설(층고 약 5 m)로 보고 50 m 로 잡는다(추정)
+    if b['osm'] == 'w74013224': b['h'], b['lv'], b['src'] = 50.0, 10, 'est_floors'
 for b in B:   # 초고층 주상복합(타워팰리스 등)은 판상형 아파트 입면이 아니라 유리 타워로 세운다
     if b['kind'] in ('apartments', 'residential') and b['h'] >= 110: b['kind'] = 'resi_tower'
 print('buildings', len(B), 'frontage heights', nfix)
@@ -280,6 +307,39 @@ for i, (b, bp) in enumerate(zip(B, bpoly)):
             q = Point(rr.uniform(x0, x1), rr.uniform(y0, y1)); kk = (round(q.x / 2.0), round(q.y / 2.0))
             if gdn.contains(q) and kk not in tkey: tkey.add(kk); S['trees'].append([round(q.x, 2), round(q.y, 2), round(rr.uniform(1.7, 2.5), 2), 0]); break
 print('houses', sum(1 for b in B if b['house']), 'with yard', nyard, 'yard trees +', len(S['trees']) - ntr, 'frontage major', sum(1 for b in B if b['rd'] == 'major'))
+# ---- 그랜드 인터컨티넨탈 서울 파르나스 앞마당(테헤란로 쪽): 진입 차로·회차 로터리·정원·포장 ----
+# 네이버 지도 위성·일반 지도 화면을 장면 좌표에 겹쳐 놓고 눈으로 본 배치(오차 3–5 m)와 거리뷰(2026-07)에서 본 생김새. 세우는 쪽은 parnas.py.
+_hb = next((b for b in B if b['osm'] == 'w924182862'), None)
+if _hb is not None:
+    hp = Polygon(_hb['rings'][0]); hc = np.array(hp.centroid.coords[0]); tl = min((LineString(r['pts']) for r in S['roads'] if r['name'] == '테헤란로'), key=lambda l: l.distance(Point(*hc))); tw = max(r['w'] for r in S['roads'] if r['name'] == '테헤란로' and LineString(r['pts']).distance(Point(*hc)) < 120)
+    q = tl.interpolate(tl.project(Point(*hc))); d = np.array([q.x, q.y]) - hc; d /= np.hypot(*d); e = np.array([-d[1], d[0]]); e = e if e[0] > 0 else -e   # d = 테헤란로 쪽, e = 동쪽
+    hit = LineString([hc, hc + d * 300]).intersection(hp.exterior); F = np.array(hit.coords[0] if hit.geom_type == 'Point' else max(hit.geoms, key=lambda g: (g.x - hc[0]) * d[0] + (g.y - hc[1]) * d[1]).coords[0])
+    Dr = float(tl.distance(Point(*F)) - tw / 2 - 4.5); P2 = lambda u, v: (F + e * u + d * v).round(2).tolist(); Rc = F + e * 72.5 + d * 9.0   # 로터리: 위성 화면에서 본 자리(호텔 동쪽 끝 앞)
+    ring = [(Rc + 9.0 * np.array([math.cos(a), math.sin(a)])).round(2).tolist() for a in np.linspace(0, 2 * math.pi, 25)]
+    drive = [P2(-40, Dr + 4), P2(-38, 24), P2(-32, 18), P2(-20, 16), P2(30, 16), P2(46, 17), (Rc - e * 9).round(2).tolist()]; out_ = [(Rc + d * 9).round(2).tolist(), (Rc + d * (Dr - 9.0 + 4) + e * 2).round(2).tolist()]
+    for pts_, w_ in ((drive, 6.5), (ring, 6.0), (out_, 6.5)): S['roads'].append({'pts': pts_, 'hw': 'service', 'cls': 'minor', 'lanes': 1, 'w': w_, 'bridge': False, 'tunnel': False, 'oneway': True, 'layer': 0, 'name': '', 'area': False})
+    court = Polygon([P2(-46, -1), P2(84, -1), P2(84, Dr), P2(-46, Dr)]).difference(unary_union([q_ for q_ in bpoly if q_.distance(Point(*F)) < 160]).buffer(.3)); garden = Polygon([P2(-28, 22), P2(50, 23), P2(50, Dr - .5), P2(-34, Dr - .5)])
+    isl = Point(*Rc).buffer(5.2, 12); corner = Polygon([P2(54, Dr - 16), P2(82, Dr - 14), P2(82, Dr - .5), P2(58, Dr - .5)]).difference(Point(*Rc).buffer(13))
+    for g_, key, nm in ((court.difference(garden).difference(isl), 'plaza', '파르나스 호텔 앞마당'), (garden, 'grass', '파르나스 호텔 정원'), (isl, 'grass', '파르나스 호텔 로터리'), (corner, 'grass', '파르나스 호텔 정원')):
+        for q_ in (g_.geoms if hasattr(g_, 'geoms') else [g_]):
+            if q_.geom_type == 'Polygon' and q_.area > 4: S['areas'].setdefault(key, []).append({'rings': [np.round(np.array(r_.coords), 2).tolist() for r_ in [q_.exterior] + list(q_.interiors)], 'name': nm, 'sport': ''})
+    zone = unary_union([garden.buffer(1.5), Point(*Rc).buffer(12.5), LineString(drive).buffer(4.5), LineString(out_).buffer(4.5), corner]); S['trees'] = [t for t in S['trees'] if not zone.contains(Point(t[0], t[1]))]; tkey = {(round(t[0] / 2.0), round(t[1] / 2.0)) for t in S['trees']}
+    rr = random.Random(1107); gt = [P2(u, v) for u in np.arange(-26, 48, 7.5) for v in (25.5, Dr - 3.0)] + [(Rc + 2.2 * np.array([math.cos(a), math.sin(a)])).round(2).tolist() for a in (0, 2.1, 4.2)] + [P2(64, Dr - 6), P2(72, Dr - 5), P2(78, Dr - 8)]
+    for x, y in gt: S['trees'].append([x, y, round(rr.uniform(2.3, 3.3), 2), 0]); tkey.add((round(x / 2.0), round(y / 2.0)))
+    S['parnas'] = {'F': F.round(2).tolist(), 'd': d.round(4).tolist(), 'e': e.round(4).tolist(), 'Dr': round(Dr, 1), 'Rc': Rc.round(2).tolist()}
+    print('parnas forecourt: F', F.round(1), 'road gap', round(Dr, 1), 'roundabout', Rc.round(1), 'garden trees', len(gt))
+
+# ---- OSM 에 없는 땅의 종류(ground_kinds.py 가 위성 화면에서 읽은 래스터. 없으면 민무늬 바탕 지면): 숲·잔디·모래 마당·아스팔트 주차장·밝은 포장 ----
+if os.path.exists('osm/ground_kinds.png'):
+    from PIL import Image as _Im
+    gj = json.load(open('osm/ground_kinds.json')); gk = np.asarray(_Im.open('osm/ground_kinds.png')); S['ground_raster'] = {'png': 'osm/ground_kinds.png', 'x0': gj['x0'], 'y1': gj['y1'], 'g': gj['g'], 'map': {'1': 28, '2': 3, '3': 7, '4': 10, '5': 21}}
+    # 나무로 읽힌 칸에 나무를 심는다(약 30 m² 에 한 그루). 건물·차도·포장 면 위는 뺀다
+    rg = np.random.default_rng(424); yy, xx = np.nonzero(gk == 1); sel = rg.random(len(yy)) < gj['g'] ** 2 / 30.0; px_ = gj['x0'] + (xx[sel] + rg.random(sel.sum())) * gj['g']; py_ = gj['y1'] - (yy[sel] + rg.random(sel.sum())) * gj['g']
+    bu = unary_union([q.buffer(1.5) for q in bpoly] + [roadsurf, hard]); ok = ~shapely.contains_xy(bu, px_, py_) & shapely.contains_xy(BOARD.buffer(80), px_, py_); nt1 = len(S['trees'])
+    for x, y, rr_ in zip(px_[ok], py_[ok], rg.uniform(2.4, 4.2, int(ok.sum()))):
+        kk = (round(x / 2.0), round(y / 2.0))
+        if kk not in tkey: tkey.add(kk); S['trees'].append([round(float(x), 2), round(float(y), 2), round(float(rr_), 2), 2])
+    print('ground kinds: cells', {k: int((gk == i).sum()) for i, k in enumerate(('unknown', 'tree', 'grass', 'sand', 'asphalt', 'pave'))}, 'trees +', len(S['trees']) - nt1)
 print('complexes', len(S['complexes']), 'old', sum(c['era'] == 'old' for c in S['complexes']), 'apartments in complexes', sum(1 for b in B if 'cx' in b), 'garden trees +', len(S['trees']) - nt0)
 
 S['extra'] = 'teheran/prep_extra.py'

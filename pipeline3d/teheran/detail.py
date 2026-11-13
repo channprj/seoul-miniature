@@ -10,6 +10,27 @@ def _png(name, w, h, bg, draw):
     return p
 def _pick(r, pairs): return r.choices([k for k, _ in pairs], [w for _, w in pairs])[0]
 
+# ================= 바탕 지면의 무늬 =================
+# gen_area 가 지면 그림(GIMG)을 저장한 뒤, 지면 판에 입히기 전에 고쳐 다시 저장한다. 무늬는 월드 좌표에 고정이라 타일 이음매가 없다.
+# 격자 방향은 강남 가로망(테헤란로 방위 ≈ 21°)을 따른다. 위성 화면에서 본 것: 지상 주차장은 짙은 아스팔트에 흰 주차 칸, 블록 안 포장은 회색 판석, 학교 운동장은 밝은 모래.
+if FINE:
+    _a = np.asarray(GIMG).copy(); _cl = np.asarray(CLS); _t = math.radians(21.0); _ct, _st = math.cos(_t), math.sin(_t)
+    _rm = Image.new('L', (GWp, GHp), 0); _rd = ImageDraw.Draw(_rm)   # 차도 둘레(주차 칸을 그리지 않을 띠: 위성에서 아스팔트로 읽힌 길가는 주차장이 아니라 차도의 일부다)
+    for r in RD:
+        if r['cls'] in ('major', 'minor'): lineg(LineString(r['pts']), r['w'] + (22 if r['cls'] == 'major' else 8), 1, _rd)
+    _rm = np.asarray(_rm) > 0
+    for _j0 in range(0, GHp, 512):
+        _j1 = min(GHp, _j0 + 512); _X, _Y = np.meshgrid(gx0 + (np.arange(GWp) + .5) * GTEX, gy1 - (np.arange(_j0, _j1) + .5) * GTEX); _U = _X * _ct + _Y * _st; _V = -_X * _st + _Y * _ct; _c = _cl[_j0:_j1]; _b = _a[_j0:_j1]
+        _g = (GKM[_j0:_j1] if GKM is not None else np.zeros(_c.shape, np.uint8))
+        _pk = (_c == 10) & (_g == 4)   # 위성에서 읽은 아스팔트 주차장: 짙은 바닥 + 주차 칸(2.5 × 5 m 두 줄 + 6 m 통로)
+        _b[_pk] = (_b[_pk] * np.array([.62, .63, .66])).astype(np.uint8); _vm = np.mod(_V, 16.0); _row = (_vm < 10.0); _ln = _pk & ~_rm[_j0:_j1] & _row & ((np.mod(_U, 2.5) < .16) | (np.abs(_vm - 5.0) < .09)); _b[_ln] = (236, 235, 230)
+        _pv = (_c <= 2) | ((_c == 21) & (_g == 5))   # 바탕 지면·밝은 포장: 2.4 m 판석 줄눈과 판마다 조금 다른 밝기
+        _tile = (np.floor(_U / 2.4).astype(np.int64) * 7349 + np.floor(_V / 2.4).astype(np.int64) * 9151) % 7; _b[_pv] = np.clip(_b[_pv] * (.94 + .02 * _tile[_pv])[:, None], 0, 255).astype(np.uint8)
+        _jn = _pv & ((np.mod(_U, 2.4) < .1) | (np.mod(_V, 2.4) < .1)); _b[_jn] = (_b[_jn] * .86).astype(np.uint8)
+        _sd = (_c == 7)   # 모래 마당: 가장자리에서 떨어진 곳에 흐린 줄(운동장 선)
+        _b[_sd & (np.mod(_V, 30.0) < .2) & (np.mod(_U, 60.0) < 40.0)] = (243, 240, 228)
+    GIMG = Image.fromarray(_a); GIMG.save(GPATH)
+
 # ================= 저층: 빌라·주택·상가·근린 사무실 =================
 # 거리뷰에서 본 것: 3–5층 다세대(화강석 판·붉은 벽돌·흰 타일·짙은 고벽돌), 1층은 기둥만 선 필로티 주차장이거나 간판 띠를 단 가게, 옥상은 초록·회색 방수 바닥에 옥탑(계단실)·실외기·물탱크,
 # 큰길 뒤 근린 사무실은 석재 격자·짙은 금속 패널·작은 유리 커튼월. 단독주택은 드물고 경사 지붕(주황·청회색 기와)이다.
@@ -127,7 +148,8 @@ NBMIX = {   # 동네별 경향(prep_extra.py 의 NBH)
 }
 _modern_base = modern
 def modern(bd, idx):
-    b0 = S['buildings'][idx - 10000]; k = b0['kind']
+    b0 = S['buildings'][idx - 10000]; k = b0['kind']; sp = globals().get('SPECIAL', {}).get(b0['osm'])
+    if sp: return sp(b0, idx)   # 전용 모델(parnas.py 의 현대백화점 등)
     if k in ('roof', 'carport', 'shed', 'garage', 'kiosk', 'hut', 'toilets', 'parking', 'greenhouse'): return _modern_base(bd, idx)   # 작은 부속 건물은 공용 규칙 그대로
     poly = orient(Polygon(bd['rings'][0], bd['rings'][1:]).buffer(0), 1.0)
     if poly.geom_type != 'Polygon' or poly.area < 4: return
@@ -202,7 +224,7 @@ APT_NEW = [dict(wall='#cfcdc8', acc='#5f646b', base='#8f8b85', glass='#44586b', 
 APT_OLD = [dict(wall='#e9e2cf', acc='#a8553f', base='#cfc6ae', glass='#4a5f70', fr='#f4f1e8', deck='#63ad8c'), dict(wall='#e4e2da', acc='#4f79a8', base='#c9c7bf', glass='#4a5f70', fr='#f6f5f0', deck='#5ba684'),
            dict(wall='#dccfb4', acc='#8a6a4e', base='#c4b79c', glass='#4a5f70', fr='#f4efe2', deck='#9d9c96'), dict(wall='#dfe3da', acc='#5c8f6e', base='#c5cabf', glass='#4a5f70', fr='#f6f5f0', deck='#63ad8c')]
 APM, ABAY, AFL = 28, 3.6, 2.9
-# 거리뷰에서 정문 앞을 본 단지 26곳의 색(벽, 띠·측벽 강조색, 저층부, 옥상 바닥). 옥상 바닥은 위성 사진에서 본 네 곳만 적었다. 나머지 단지는 연대별 기본 색 가운데 하나를 고정 난수로 쓴다.
+# 거리뷰에서 정문 앞을 본 큰 단지 26곳의 색(벽, 띠·측벽 강조색, 저층부, 옥상 바닥). 옥상 바닥은 위성 사진에서 본 네 곳만 적었다. 나머지 단지는 연대별 기본 색 가운데 하나를 고정 난수로 쓴다.
 CXS = {
     '서초진흥아파트': dict(wall='#e6dcc0', acc='#a8553f', deck='#b9b6ae'), '롯데캐슬프레미어아파트': dict(wall='#d9d9d6', acc='#4a4d52', base='#b08a7a'), '개포경남아파트': dict(wall='#e9e9e4', acc='#4f5358'),
     '개포우성4차아파트': dict(wall='#efefea', acc='#9a9c9a', deck='#3f8a63'), '역삼 래미안': dict(wall='#dcdcd8', acc='#8a8d92'), '역삼 e편한세상': dict(wall='#e4e4e0', acc='#8a8d92', base='#a88f7c'),
@@ -214,6 +236,21 @@ CXS = {
     '래미안그레이튼3차아파트': dict(wall='#d4d4d2', acc='#8a8d90'), '대치현대아파트': dict(wall='#dcdcda', acc='#6a6d72'), '대치푸르지오써밋아파트': dict(wall='#d9d9d9', acc='#3c3f45'),
     '역삼럭키아파트': dict(wall='#ececea', acc='#6f8fb0', deck='#3f8a63'), '디에이치대치에델루이': dict(wall='#d9c9b0', acc='#4a4640', base='#b5a48c'), '한보은마아파트': dict(wall='#e9e2cf', acc='#a8553f', deck='#c9cbcc'),
 }
+CXS.update({   # 나머지 단지 가운데 정문 앞 거리뷰에서 외벽이 보인 38곳(2026-11-13). 나무에 가려 못 본 단지는 연대별 기본 색이다
+    '서초롯데캐슬클래식아파트': dict(wall='#e9e4d6', acc='#b9a88c'), '서초롯데캐슬프레지던트': dict(wall='#d9cdb8', acc='#7a6654'), '래미안리더스원아파트': dict(wall='#d6d6d4', acc='#5a5d62'),
+    '래미안그레이튼아파트': dict(wall='#cfcfcc', acc='#3f444b'), '테헤란 아이파크': dict(wall='#e6dcc4', acc='#b9a88c'), '래미안대치팰리스2단지아파트': dict(wall='#d4d4d2', acc='#4a4d52'),
+    '우성5차아파트': dict(wall='#ececea', acc='#9a9c9a'), '서광 아파트': dict(wall='#e9e9e6', acc='#8f9aa3'), '대치포스코더샵아파트': dict(wall='#dfe3e6', acc='#7f95a8'),
+    '센트럴아이파크아파트': dict(wall='#efe9d8', acc='#d9b27a'), '청담대림e편한세상1차아파트': dict(wall='#ececea', acc='#a8553f'), '청담e편한세상 2차 아파트': dict(wall='#e9ecee', acc='#7f95a8'),
+    '삼성롯데캐슬아파트': dict(wall='#e6e6e2', acc='#5a5d62'), '래미안 펜타빌': dict(wall='#ebe6da', acc='#7b6654'), '개나리4차아파트': dict(wall='#ececea', acc='#9a9c9a'),
+    '역삼 자이': dict(wall='#e2e2e0', acc='#4a4d52'), '현대 까르띠에 710': dict(wall='#e9ecee', acc='#6f8fb0'), '개나리 SK뷰': dict(wall='#e6e6e2', acc='#4a4d52'),
+    '개나리푸르지오아파트': dict(wall='#ddd2bc', acc='#4a4640'), '개포우성2차아파트': dict(wall='#ececea', acc='#3f5a8a'), '래미안서초에스티지아파트': dict(wall='#d9cbb8', acc='#7a5a48'),
+    '래미안서초에스티지S아파트': dict(wall='#e6e6e4', acc='#3f444b'), '삼성동중앙하이츠빌리지아파트': dict(wall='#e9ecee', acc='#7f95a8'), '청담삼성진흥아파트': dict(wall='#e9e2cf', acc='#5f9a9a'),
+    '대치SK뷰아파트': dict(wall='#d6d6d4', acc='#8a3a2e'), '동현아파트': dict(wall='#d4d4d2', acc='#5a5d62'), '삼성아파트': dict(wall='#ececea', acc='#4f79a8'),
+    '역삼2차아이파크아파트': dict(wall='#cfcbc2', acc='#5a5d62'), '대치르엘아파트': dict(wall='#d4d4d2', acc='#3f444b'), '도곡한신아파트': dict(wall='#ececea', acc='#2f3f5a'),
+    '동양파라곤아파트': dict(wall='#e2d9c6', acc='#b3a48c'), '논현동부센트레빌': dict(wall='#e9ecee', acc='#7f95a8'), '아크로힐스논현아파트': dict(wall='#e6e2da', acc='#8a4a3a'),
+    '대치롯데캐슬아파트': dict(wall='#ececea', acc='#9a9c9a'), '역삼금호어울림아파트': dict(wall='#d9d6d0', acc='#8a8d92'), '도곡아이파크3차아파트': dict(wall='#e6dcc8', acc='#8a6a4e'),
+    '개포현대1차아파트': dict(wall='#efece4', acc='#b9a88c'), '개포우성3차아파트': dict(wall='#e9e2cf', acc='#c98a3a'),
+})
 def apt_scheme(cx, seed, lv):
     era = cx['era'] if cx else ('old' if lv <= 15 else 'new'); L_ = APT_OLD if era == 'old' else APT_NEW; i = random.Random(cx['seed'] if cx else seed).randrange(len(L_)); o = CXS.get(cx['name']) if cx else None
     if o: d = dict(L_[0]); d.update(o); return era, 'x%d%s' % (zlib.crc32(cx['name'].encode()) % 99999, era), d
@@ -362,6 +399,7 @@ TOWER_SIGNS = {
 }
 # 거리뷰에서 외장을 본 건물의 유형·색(나머지는 고정 난수). sty = 유형, g = 유리색, st = (석재색, 창색), spc = 띠 색
 TOWER_STYLE = {
+    'w924182862': dict(sty='band', g='#8fa9bd', spc='#c3ced6'),          # 그랜드 인터컨티넨탈 서울 파르나스: 은청색 반사 유리에 층마다 밝은 가로 띠
     'w845329553': dict(sty='diagrid'),                                   # 선릉역 서쪽 테헤란로 북쪽 변의 사선 격자 유리 건물
     'w557469309': dict(sty='dark', g='#3f4a56'), 'w561726162': dict(sty='curtain', g='#5d8fbf'), 'w272052332': dict(sty='stone', st=('#55585d', '#c9ccd0')),
     'w703780988': dict(sty='stone', st=('#b9b6ae', '#2f3d49')), 'w800238998': dict(sty='stone', st=('#cfcfca', '#34444f')), 'w547175590': dict(sty='fins', g='#5d8fbf', st=('#e6e4dc', '#4f7fb5')),
@@ -397,6 +435,8 @@ def vsign_png(path):
 _tower_base = tower
 def tower(b, idx, cfg=None):
     if cfg is not None: return _tower_base(b, idx, cfg)
+    sp = globals().get('SPECIAL', {}).get(b['osm'])
+    if sp: return sp(b, idx)   # 전용 모델(parnas.py 의 현대백화점 등)
     poly = orient(P(b['rings']), 1.0)
     if poly.geom_type != 'Polygon' or poly.area < 20: return
     h = b['h']; r = random.Random(b['seed'] * 31 + 7); mb = MB(); c, ax_, Lx, Ly, mc = mrr_axes(poly); resi = b['kind'] in ('resi_tower', 'officetel', 'hotel', 'apartments', 'residential', 'dormitory')
