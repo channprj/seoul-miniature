@@ -65,7 +65,7 @@
 
 - 랜드마크의 색·입면 구성은 네이버 지도 거리뷰를 사람이(작업한 에이전트가) 눈으로 보고 3D 모델에 옮겼다. 화면을 저장소나 그림에 넣지 않았고, 확인용으로 찍은 화면은 작업 폴더 밖 임시 폴더에만 두었다.
 - 일반 건물(빌라·주택, 아파트 동과 단지, 타워)의 외벽 유형·옥상 설비·단지 마당도 거리뷰(주택가 골목 19곳, 단지 26곳, 테헤란로 23곳)와 네이버 지도 위성 사진(랜드마크 옥상 13곳, 옛 단지 4곳)에서 본 것을 규칙·표로 옮긴 것이다(`pipeline3d/teheran/detail.py`, `prep_extra.py` 의 `NBH`). 화면은 저장소에 넣지 않았다. 아파트 측벽의 동 번호는 OSM 건물 이름에서 읽었다.
-- 건물 간판(PARNAS, GLASS TOWER, posco, GS, THE HYUNDAI, coex, wework, workflex, KR TOWER, ARTNOUVEAU CITY HOTEL, FASTFIVE, HOTEL PEYTO, Canon, SPARKPLUS, MEGABOX)은 거리뷰에서 읽은 글자를 일반 글꼴로 적은 것이고, 상표 도안은 그리지 않았다. 각 이름과 상표는 해당 회사의 것이다. 전광판 화면은 광고가 아니라 색 무늬다.
+- 건물 간판(PARNAS, GLASS TOWER, posco, GS, THE HYUNDAI, coex, wework, CENTERFIELD, JOSUN PALACE, workflex, KR TOWER, ARTNOUVEAU CITY HOTEL, FASTFIVE, HOTEL PEYTO, Canon, SPARKPLUS, MEGABOX)은 거리뷰에서 읽은 글자를 일반 글꼴로 적은 것이고, 상표 도안은 그리지 않았다. 각 이름과 상표는 해당 회사의 것이다. 전광판 화면은 광고가 아니라 색 무늬다.
 - 삼성역 광장(코엑스 동측 광장·밀레니엄 광장·출구 앞 공사 야적장)은 OSM 에 윤곽이 없어, 네이버 지도 위성 사진을 장면 좌표에 맞춰 놓고 눈으로 본 자리를 근사 좌표로 적었다(`pipeline3d/teheran/prep_extra.py`, 오차 2–3 m). 형태·색은 거리뷰를 보고 정했다(길 쪽은 2026-07 촬영분, 광장 안쪽은 공사 전인 2017-08 보행 촬영분 가운데 지금 위성 사진에 남아 있는 것). 위성 사진·거리뷰 화면은 저장소나 그림에 넣지 않았다. 담장 벽화는 실제 글자·도안이 아니라 색 블록 무늬다.
 - 건물 높이는 OSM `height` → `building:levels` 순으로 읽고, 없으면 건물 종류·면적·큰길 접함으로 추정했다. 봉분 언덕의 높이, 광장 계단의 깊이, 공사 현장·야적장의 골조·장비 배치는 연출이다.
 - 장면 데이터(`map.json`)는 OSM 에서 왔으므로 **ODbL 1.0**, 그림은 다른 지도와 같이 **CC BY 4.0** 이다.
