@@ -381,7 +381,8 @@ for k, v in (('resi_land', 1), ('comm_land', 2), ('rail_land', 12), ('dirt', 11)
 GKM = None   # [테헤란로] 지면 종류 래스터(S['ground_raster'], teheran/ground_kinds.py): OSM 에 없는 땅(바탕 지면 0·1·2)의 종류. 뒤에 그리는 물·광장·주차장·도로가 덮는다
 if S.get('ground_raster'):
     _gr = S['ground_raster']; _ki = Image.open(os.path.join(os.path.dirname(os.environ.get('P3D_SCENE', AREA + '/scene.json')), _gr['png'])); _g = _gr['g']
-    _box = ((gx0 - _gr['x0']) / _g, (_gr['y1'] - gy1) / _g, (gx1 - _gr['x0']) / _g, (_gr['y1'] - gy0) / _g); _ka = np.asarray(_ki); _cl = np.array(CLS); _base = _cl <= 2; GKM = np.zeros(_cl.shape, np.uint8); _best = np.full(_cl.shape, 127, np.uint8)
+    _pad = 160; _ka = np.pad(np.asarray(_ki), _pad)   # 판 가장자리 타일의 지면 그림은 래스터 밖까지 나간다 → 모름(0)으로 둘러 둔다
+    _box = tuple(v + _pad for v in ((gx0 - _gr['x0']) / _g, (_gr['y1'] - gy1) / _g, (gx1 - _gr['x0']) / _g, (_gr['y1'] - gy0) / _g)); _cl = np.array(CLS); _base = _cl <= 2; GKM = np.zeros(_cl.shape, np.uint8); _best = np.full(_cl.shape, 127, np.uint8)
     for _k, _v in sorted(_gr['map'].items()):   # 종류마다 부드럽게 키워(2 m 칸의 계단을 없앤다) 가장 센 종류를 고른다
         _m = np.asarray(Image.fromarray(((_ka == int(_k)) * 255).astype(np.uint8)).resize((GWp, GHp), Image.BILINEAR, box=_box)); _t = (_m > _best) & _base; GKM[_t] = int(_k); _cl[_t] = _v; _best[_t] = _m[_t]
     CLS = Image.fromarray(_cl); CD = ImageDraw.Draw(CLS)
