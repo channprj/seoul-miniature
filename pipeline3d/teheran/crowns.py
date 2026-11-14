@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """랜드마크 타워에 덧붙이는 형태(lm_build.py 가 parnas.py 다음에 exec 한다). 네이버 지도 거리뷰·항공뷰·위성 화면과 위키미디어 공용 사진을 2026-11-13·14 에 눈으로 보고 옮겼다.
   삼성 서초사옥 세 동(samsung()): 한 동이 통짜 상자가 아니라, 높은 몸통 옆에 높이가 다른 유리 상자들이 붙어 계단처럼 오르는 꼴이다. 덩어리마다 줄의 방향이 다르다(층마다 밝은 가로줄 / 밝은 세로 핀).
+        도면 — ArchDaily 에 실린 KPF 도면 네 장(배치도, 위치도, B동·C동 평면도)과 대조했다(2026-11-14). 평면 구성은 도면을 따른다: 세 동과 따로 선 북쪽 별동, C동 타워가 윤곽의 북쪽 76 % 에 서는 것,
+          A·B동이 긴 축으로 나란한 두 판으로 이루어지고 B동은 남쪽 판이 서쪽으로 밀려 있는 것. 단면도·입면도는 공개된 것을 찾지 못해 높이 구성은 아래 사진에서 읽었다.
         본 것 — 네이버 항공뷰(2009-03 촬영, 남쪽 상공 6곳)와 위키미디어 공용 사진 「Samsung headquarters.jpg」(북동쪽에서), 거리뷰:
           삼성전자 동: 남쪽 끝의 낮은 기단(옥상에 초록 줄), 그 뒤 중간 덩어리(가로줄), 북쪽의 높은 몸통은 동쪽의 가로줄 판(꼭대기에 짙은 띠)과 서쪽의 조금 낮은 세로 핀 판. 가로줄 판 아래는 세로 핀이고 그 사이에 몇 층 들어간 허리가 있다.
           삼성화재 동: 동서로 긴 몸통(세로 핀, 옥상 동쪽 끝에 헬리패드)과 남서쪽 앞의 낮은 상자.
@@ -68,23 +70,24 @@ def samsung(b, idx, cfg):
                         if q2.area > 2: capf(mb, orient(q2, 1.0), lambda x, y, z1=z1: z1 + .12, mat_flat('#7fae5a'))
     toonify(mb.build('b%d' % idx, idx))
 _SS = dict(glass='#5f8fca', fin='#c6d9ee', line='#3f6aa3', spc='#c3d0dc', lobby=10.0, deck='#c9cbcc')
-LMC['samsung_e'] = dict(_SS, ud=(-.36, .93), vd=(.93, .36), boxes=(          # 삼성전자: u = 남 → 북, v = 서 → 동
-    dict(r=(0, .22, 0, 1), z=(0, .20), k='h', top='green'),                   # 남쪽 끝 기단
-    dict(r=(.22, .50, 0, 1), z=(0, .50), k='h', top='plain'),                 # 중간 덩어리
+LMC['samsung_e'] = dict(_SS, ud=(-.36, .93), vd=(.93, .36), boxes=(          # 삼성전자(C동): u = 남 → 북, v = 서 → 동. 배치도에서 타워(코어가 든 큰 직사각형)는 윤곽의 북쪽 76 %
+    dict(r=(0, .24, 0, 1), z=(0, .20), k='h', top='green'),                   # 남쪽 끝 기단
+    dict(r=(.24, .50, 0, 1), z=(0, .50), k='h', top='plain'),                 # 중간 덩어리
     dict(r=(.50, 1, .36, 1), z=(0, .33), k='v'),                              # 높은 몸통의 아래(세로 핀)
     dict(r=(.50, 1, .36, 1), z=(.33, .38), k='d', inset=3.5),                 # 들어간 허리
     dict(r=(.50, 1.02, .36, 1), z=(.38, 1.0), k='h', top='main', crown=True, heli=(.86, .68)),   # 가로줄 판(가장 높다)
     dict(r=(.50, 1.035, -.04, .36), z=(0, .90), k='v', top='plain')))         # 서쪽 세로 핀 판(조금 낮고 조금 내밀었다)
-LMC['samsung_c'] = dict(_SS, ud=(.94, .34), vd=(-.34, .94), boxes=(          # 삼성화재: u = 서 → 동, v = 남 → 북
-    dict(r=(0, 1, 0, 1), cut=((-.1, .60, -.1, .32),), z=(0, 1.0), k='v', top='main', heli=(.84, .66)),   # 몸통
-    dict(r=(0, .60, -.03, .32), z=(0, .45), k='h', top='plain')))             # 남서쪽 앞의 낮은 상자
-LMC['samsung_l'] = dict(_SS, ud=(-.36, .93), vd=(.93, .36), boxes=(          # 삼성생명: u = 남 → 북, v = 서 → 동
-    dict(r=(0, 1, .25, .80), z=(0, 1.0), k='h', top='main', heli=(.5, .52)),  # 몸통
-    dict(r=(.08, .92, .80, 1), z=(0, .85), k='v', top='garden'),              # 동쪽에 붙은 조금 낮은 판
-    dict(r=(0, .50, 0, .25), z=(0, .50), k='h', top='garden'),                # 남서쪽 낮은 덩어리
-    dict(r=(.50, 1.03, -.09, .25), z=(.55, 1.02), k='v', top='plain')))       # 북서쪽에 내민 세로 핀 유리 상자
+LMC['samsung_c'] = dict(_SS, ud=(.94, .34), vd=(-.34, .94), boxes=(          # 삼성화재(B동): u = 서 → 동, v = 남 → 북. 평면도: 긴 축으로 나란한 두 판, 남쪽 판이 서쪽으로 약 5.5 m 밀려 있다
+    dict(r=(0, 1, .42, 1), z=(0, 1.0), k='h', top='main', heli=(.84, .72)),   # 북쪽 판(깊이의 58 %, 코어·헬리패드)
+    dict(r=(-.106, .97, 0, .42), z=(0, .97), k='v', top='plain'),             # 남쪽 판(서쪽으로 밀림)
+    dict(r=(-.106, .45, -.12, .10), z=(0, .45), k='h', top='plain')))         # 남서쪽 앞으로 내민 낮은 상자(항공뷰)
+LMC['samsung_l'] = dict(_SS, ud=(-.36, .93), vd=(.93, .36), boxes=(          # 삼성생명(A동): u = 남 → 북, v = 서 → 동. 배치도: 나란한 두 판, 서쪽 판이 깊이의 38 % 이고 북쪽 끝이 조금 짧다
+    dict(r=(0, 1, .38, .86), z=(0, 1.0), k='h', top='main', heli=(.5, .62)),  # 동쪽 판(코어·헬리패드)
+    dict(r=(.08, .92, .86, 1), z=(0, .85), k='v', top='garden'),              # 동쪽 가장자리의 조금 낮은 띠(옥상 정원, 항공뷰)
+    dict(r=(0, .89, -.05, .38), z=(0, 1.02), k='v', top='plain')))            # 서쪽 판(세로 핀, 조금 내밀었다)
 LMB.update(samsung_e=samsung, samsung_c=samsung, samsung_l=samsung)
-def samsung_annex(b, idx):   # 삼성전자 동 북쪽의 낮은 별동
+def samsung_annex(b, idx):   # 삼성전자 동 북쪽의 낮은 별동. KPF 배치도에서 타워와 약 10 m 떨어진 따로 선 상자라, 남쪽 8 m 를 잘라 틈을 둔다(OSM 윤곽은 둘이 붙어 있다)
+    g_ = P(b['rings']); g_ = g_.intersection(shapely.affinity.translate(g_, -.36 * 8.0, .93 * 8.0)); b = dict(b, rings=[list(orient(g_, 1.0).exterior.coords)])
     ltower(b, idx, dict(glass='#3c4d63', line='#27323f', flh=4.2, bay=1.5, sp=.5, spc='#9aa8b6', lobby=8.0, kit=2, heli=False, deck='#6f8f6a'))
 SPECIAL['r8311185n'] = samsung_annex
 SPECIAL['w305923846'] = lambda b, idx: None   # 강남역 지하쇼핑센터: OSM 에 location=underground 로 올라 있는 지하 상가라 지상에는 아무것도 세우지 않는다(장면의 건물 순번이 밀리지 않게 항목은 그대로 둔다)

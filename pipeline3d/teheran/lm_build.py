@@ -27,8 +27,9 @@ LMC.update({
 })
 
 def gt_wave(b, idx, cfg):
-    """GT타워(거리뷰 네 방향, 2026-11-14): 짙은 파란 반사 유리에 촘촘한 세로 핀이 바닥에서 꼭대기까지 물결을 따라 흐른다. 평면은 그대로 두고 높이에 따라 남북·동서로 흔들린다
-    (꼭대기는 남쪽으로, 그 아래는 북쪽으로 — 서쪽에서 본 옆모습). 흔들림 3 m·2 m 와 주기(높이에 1.3 번)는 사진 비례로 잡은 추정. 핀 간격은 그림에서 읽히게 실제(약 1.5 m)의 두 배로 했다."""
+    """GT타워(거리뷰 네 방향, 2026-11-14): 짙은 파란 반사 유리에 촘촘한 세로 핀이 바닥에서 꼭대기까지 물결을 따라 흐른다.
+    물결은 설계자(ArchitectenConsort) 설명대로다: 층 바닥을 두 대각선 가운데 하나를 따라 최대 3 m 밀고, 그 흔들림이 건물 높이에 두 번 반 되풀이되며, 네 면이 나란히 움직인다(평면은 그대로).
+    어느 대각선인지와 위상은 설명에 없어 거리뷰에서 읽었다(꼭대기가 남서쪽으로). 핀 간격은 그림에서 읽히게 실제(약 1.5 m)의 두 배로 했다."""
     poly = orient(P(b['rings']), 1.0); c, ax_, Lx, Ly, _ = mrr_axes(poly); c, ax_ = np.array(c, float), np.array(ax_, float); nv = np.array([-ax_[1], ax_[0]]); H = b['h']; mb = MB()
     aE, nS = (ax_ if ax_[0] > 0 else -ax_), (nv if nv[1] < 0 else -nv); g_, fin = cfg['glass'], cfg['line']; tw, th = 12.0, 2 * cfg['flh']
     def draw(d):
@@ -36,10 +37,10 @@ def gt_wave(b, idx, cfg):
         for k in range(4): x = int(k * 3.0 * RPPM); d.rectangle([x, 0, x + int(.8 * RPPM) - 1, int(th * RPPM)], fill=fin)                         # 세로 핀
     gm = mat_tex(_png(f'gtfin_{g_[1:]}', int(tw * RPPM), int(th * RPPM), g_, draw), 'gtfin' + g_)
     loc = [np.array(p[:2]) - c for p in list(poly.exterior.coords)[:-1]]
+    dg = nS * Ly - aE * Lx; dg /= np.hypot(*dg)   # 남서쪽 대각선
     def ring(z):
-        t = z / H; k = min(1.0, t / .1); ph = 2 * math.pi * 1.3 * (t - 1) + math.pi / 2
-        o = c + nS * (3.0 * k * math.sin(ph)) - aE * (2.0 * k * math.sin(ph + .9)); s_ = 1 + .03 * k * math.sin(.8 * ph + 2.0)
-        return [(o[0] + q[0] * s_, o[1] + q[1] * s_, z) for q in loc]
+        t = z / H; o = c + dg * (3.0 * min(1.0, t / .05) * math.sin(2 * math.pi * 2.5 * (t - 1) + math.pi / 2))
+        return [(o[0] + q[0], o[1] + q[1], z) for q in loc]
     zs = list(np.arange(0, H, cfg['flh'] / 2)) + [H]; R_ = [ring(z) for z in zs]; n = len(loc)
     s0 = np.cumsum([0] + [math.hypot(R_[0][(i + 1) % n][0] - R_[0][i][0], R_[0][(i + 1) % n][1] - R_[0][i][1]) for i in range(n)])
     for k in range(len(zs) - 1):
