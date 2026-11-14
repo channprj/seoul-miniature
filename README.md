@@ -3,7 +3,7 @@
 **경복궁과 여의도를 실제 지도 배치 그대로 옮긴, 살아 움직이는 픽셀아트 미니어처.**
 시간·계절·날씨가 바뀌고, 사람과 자전거와 차가 돌아다닙니다. 브라우저에서 바로 열립니다.
 
-**[▶ 경복궁 보기](https://midagedev.github.io/seoul-miniature/) · [▶ 여의도 보기](https://midagedev.github.io/seoul-miniature/?map=yeouido) · [▶ 테헤란로 보기(이 포크)](https://channprj.github.io/seoul-miniature/?map=teheran) · [3D 장면 받기](https://github.com/midagedev/seoul-miniature/releases) · [만든 방법](docs/PIPELINE.md) · [쓴 프롬프트](docs/PROMPTS.md) · [가져다 쓰기](docs/REUSE.md)**
+**[▶ 경복궁 보기](https://midagedev.github.io/seoul-miniature/) · [▶ 여의도 보기](https://midagedev.github.io/seoul-miniature/?map=yeouido) · [▶ 테헤란로 보기](https://midagedev.github.io/seoul-miniature/?map=teheran) · [3D 장면 받기](https://github.com/midagedev/seoul-miniature/releases) · [만든 방법](docs/PIPELINE.md) · [쓴 프롬프트](docs/PROMPTS.md) · [가져다 쓰기](docs/REUSE.md)**
 
 ![여의도 전체](docs/img/yeouido_overview.jpg)
 
