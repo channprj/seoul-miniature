@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
-"""랜드마크 타워에 덧붙이는 형태(lm_build.py 가 parnas.py 다음에 exec 한다). 네이버 지도 거리뷰와 위성 화면을 2026-11-13·14 에 눈으로 보고 옮겼다.
-  삼성 서초사옥 세 동(samsung()): 파란 반사 유리 상자를 어긋나게 쌓은 꼴. 덩어리마다 줄의 방향이 다르다 — 층마다 밝은 가로줄인 덩어리와 밝은 세로 핀인 덩어리가 번갈아 놓인다
-                       (삼성전자 동 서쪽 면: 아래는 세로 핀, 틈 위는 가로줄. 거리뷰). 윗덩어리는 한쪽으로 밀려 나와 있고 그 밑 모퉁이에 여러 층 높이의 짙은 틈이 있다. 꼭대기에는 짙은 설비 띠.
-                       삼성전자 동의 북서 모퉁이 틈과 북쪽 낮은 별동(짙은 유리 + 밝은 가로 루버)은 거리뷰에서 본 자리이고, 나머지 동의 덩어리 경계 높이·밀린 방향(2~2.5 m)·틈의 자리는 같은 꼴을 어림해 둔 것이다
-                       (prep_extra.py 가 전자 동을 타워와 별동으로 나누고 생명 동의 윤곽을 고친다).
+"""랜드마크 타워에 덧붙이는 형태(lm_build.py 가 parnas.py 다음에 exec 한다). 네이버 지도 거리뷰·항공뷰·위성 화면과 위키미디어 공용 사진을 2026-11-13·14 에 눈으로 보고 옮겼다.
+  삼성 서초사옥 세 동(samsung()): 한 동이 통짜 상자가 아니라, 높은 몸통 옆에 높이가 다른 유리 상자들이 붙어 계단처럼 오르는 꼴이다. 덩어리마다 줄의 방향이 다르다(층마다 밝은 가로줄 / 밝은 세로 핀).
+        본 것 — 네이버 항공뷰(2009-03 촬영, 남쪽 상공 6곳)와 위키미디어 공용 사진 「Samsung headquarters.jpg」(북동쪽에서), 거리뷰:
+          삼성전자 동: 남쪽 끝의 낮은 기단(옥상에 초록 줄), 그 뒤 중간 덩어리(가로줄), 북쪽의 높은 몸통은 동쪽의 가로줄 판(꼭대기에 짙은 띠)과 서쪽의 조금 낮은 세로 핀 판. 가로줄 판 아래는 세로 핀이고 그 사이에 몇 층 들어간 허리가 있다.
+          삼성화재 동: 동서로 긴 몸통(세로 핀, 옥상 동쪽 끝에 헬리패드)과 남서쪽 앞의 낮은 상자.
+          삼성생명 동: 몸통(헬리패드), 동쪽에 붙은 조금 낮은 판(옥상 정원), 남서쪽의 낮은 덩어리(옥상 정원), 북서쪽에 중간 높이부터 꼭대기까지 밖으로 내민 세로 핀 유리 상자.
+        어림 — 덩어리를 나누는 자리(윤곽의 몇 할)와 높이는 사진 비례로 잡았다(오차 10 % 안팎). 내민 폭 2~4 m, 헬리패드 크기도 어림이다. 틈 밑의 그늘은 위에서 보는 그림이라 따로 칠하지 않았다
+        (앞 판은 그 자리를 짙은 판으로 칠해 전광판처럼 보였다 — 실제로는 유리 상자가 밖으로 나와 있을 뿐이다). prep_extra.py 가 전자 동을 타워와 북쪽 별동으로 나누고 생명 동의 윤곽을 고친다.
   메리츠타워: 옥상을 두른 비스듬한 금속 틀(북서 변이 높고 남동 변이 낮다. 위성 화면에서는 헬리패드를 두른 흰 테로 보인다). 높이 12 m 는 어림.
   강남역 지하쇼핑센터: 지하 상가(OSM location=underground)가 69 m 건물로 서 있던 것을 뺀다.
   GS타워: 긴 면은 밝은 은회색 격자(lm_build.py 의 LMC), 서쪽 끝면은 짙은 반사 유리에 검은 세로 줄 하나와 꼭대기의 계단꼴 검은 홈, 'GS타워' 글자(일반 글꼴).
 """
-cmb = MB(); _VOID, _SOF = mat_flat('#222932'), mat_flat('#dfe8f0')
-def _vtx(g, dx, dy): return np.array(max(g.exterior.coords[:-1], key=lambda p: p[0] * dx + p[1] * dy)[:2])
+cmb = MB()
 def _sstex(kind, glass, line, flh=4.2):
     """삼성 서초사옥 유리. 'h' = 층마다 밝은 가로줄(+ 옅은 세로 이음), 'v' = 밝은 세로 핀(+ 옅은 층 줄). 핀 간격 3 m 는 그림에서 읽히게 실제의 두 배."""
     W, Hh = 12.0, 2 * flh
@@ -25,26 +27,62 @@ def _sstex(kind, glass, line, flh=4.2):
             else: d.rectangle([x, 0, x + int(.8 * RPPM) - 1, h], fill=line)
     return mat_tex(_png(f'ss{kind}_{glass[1:]}_{line[1:]}', int(W * RPPM), int(Hh * RPPM), glass, draw), f'ss{kind}{glass}{line}'), W, Hh
 def samsung(b, idx, cfg):
-    """삼성 서초사옥 한 동. cfg['vols'] = 아래부터 (윗높이 ÷ 전체 높이, 줄 방향 'h'|'v', 밀림 (동, 북) m), cfg['voids'] = (모퉁이 방향, 폭 m, 아래 ÷ H, 위 ÷ H, 덩어리 순번)."""
-    poly = orient(P(b['rings']), 1.0); H = b['h']; mb = MB(); LB = cfg.get('lobby', 10.0); z0 = LB; gs = []
-    _lobby(mb, poly, LB, cfg['glass'], cfg['spc'], cfg['line'])
-    for f1, kind, (dx, dy) in cfg['vols']:
-        g = orient(shapely.affinity.translate(poly, dx, dy), 1.0); z1 = H * f1; m, tw, th = _sstex(kind, cfg['glass'] if kind == 'h' else shade(cfg['glass'], .9), cfg['fin'])
-        skin(mb, g, z0, lambda x, y, z1=z1: z1, m, tw, th); capf(mb, g, lambda x, y, z1=z1: z1, mat_flat('#aeb8c2')); gs.append(g); z0 = z1
-    for (dx, dy), w, f0, f1, k in cfg['voids']:   # 모퉁이를 감싸는 짙은 틈과, 그 위로 내민 윗덩어리의 밝은 밑단
-        g = gs[k]; dv = _vtx(g, dx, dy) - np.array(g.centroid.coords[0]); wall_strip(mb, g, dv, H * f0, H * f1, _VOID, w=w, off=.3); wall_strip(mb, g, dv, H * f1, H * f1 + .6, _SOF, w=w + 1.2, off=.5)
-    g = gs[-1]; cb = orient(g.buffer(.3, join_style=2), 1.0); skin(mb, cb, H - 6.0, lambda x, y: H + .2, mat_flat('#34404e'), 1, 1)   # 꼭대기의 짙은 설비 띠
-    _parapet(mb, g, H, '#c3d0dc'); c, ax_, Lx, Ly, _ = mrr_axes(g); core = g.buffer(-max(3.0, .26 * Ly), join_style=2); up_ = None
-    if core.geom_type == 'Polygon' and core.area > 15: skin(mb, orient(core, 1.0), H, lambda x, y: H + 4.5, mat_flat('#a9aaa8'), 1, 1); capf(mb, core, lambda x, y: H + 4.5, mat_flat('#8c8e90')); up_ = (core, H + 4.5)
-    roof_std(mb, g, H, up_[0] if up_ else None, up_[1] if up_ else H, False, b['seed'])
-    inn = g.buffer(-1.5, join_style=2); inn = inn.difference(up_[0].buffer(.05)) if up_ else inn
-    for q in parts(inn):
-        if q.area > 6: capf(mb, orient(q, 1.0), lambda x, y: H + .09, mat_flat(cfg['deck']))
+    """삼성 서초사옥 한 동을 유리 상자 여러 개로 세운다. 윤곽을 두른 최소 직사각형에서 u(cfg['ud'] 쪽)·v(cfg['vd'] 쪽)를 0..1 로 재고,
+    cfg['boxes'] 의 상자마다 r = (u0, u1, v0, v1)(0..1 밖이면 그만큼 윤곽 밖으로 내민다), z = (아래, 위) ÷ 전체 높이, k = 줄 방향('h'|'v'|'d' 짙은 허리),
+    cut = 빼낼 직사각형들, top = 'main'(파라펫·기계실·헬리패드) | 'garden'(옥상 정원) | 'green'(초록 줄) | None, crown = 꼭대기 짙은 띠, heli = 헬리패드 자리 (u, v)."""
+    poly = orient(P(b['rings']), 1.0); H = b['h']; mb = MB(); mc = mrr_axes(poly)[4]; c0 = np.mean(mc, axis=0); e0, e1 = mc[1] - mc[0], mc[2] - mc[1]
+    ud, vd = np.array(cfg['ud'], float), np.array(cfg['vd'], float); L0, L1 = float(np.hypot(*e0)), float(np.hypot(*e1)); e0, e1 = e0 / L0, e1 / L1
+    (u, Lu), (v, Lv) = ((e0, L0), (e1, L1)) if abs(e0 @ ud) >= abs(e1 @ ud) else ((e1, L1), (e0, L0)); u = u if u @ ud > 0 else -u; v = v if v @ vd > 0 else -v
+    at = lambda s_, t_: c0 + u * (s_ - .5) * Lu + v * (t_ - .5) * Lv
+    rect = lambda u0, u1, v0, v1: Polygon([tuple(at(u0, v0)), tuple(at(u1, v0)), tuple(at(u1, v1)), tuple(at(u0, v1))])
+    for bx in cfg['boxes']:
+        u0, u1, v0, v1 = bx['r']; pb = max(0.0, -u0 * Lu, (u1 - 1) * Lu, -v0 * Lv, (v1 - 1) * Lv)
+        g = (poly.buffer(pb, join_style=2) if pb else poly).intersection(rect(u0, u1, v0, v1))
+        for r_ in bx.get('cut', ()): g = g.difference(rect(*r_))
+        if bx.get('inset'): g = g.buffer(-bx['inset'], join_style=2)
+        g = max(parts(g), key=lambda q: q.area) if not g.is_empty else None
+        if g is None or g.area < 20: continue
+        g = orient(g, 1.0); z0, z1 = H * bx['z'][0], H * bx['z'][1]; k = bx['k']
+        if z0 == 0 and k != 'd': _lobby(mb, g, cfg['lobby'], cfg['glass'], cfg['spc'], cfg['line']); z0 = cfg['lobby']
+        if k == 'd': m, tw, th = mat_flat('#2f4466'), 1, 1                                   # 들어간 허리: 그늘진 유리
+        else: m, tw, th = _sstex(k, cfg['glass'] if k == 'h' else shade(cfg['glass'], .9), cfg['fin'])
+        skin(mb, g, z0, lambda x, y, z1=z1: z1, m, tw, th); capf(mb, g, lambda x, y, z1=z1: z1, mat_flat('#c4c8cc'))
+        if bx['z'][0] > 0: capf(mb, g, lambda x, y, z0=z0: z0, mat_flat('#2b3644'))          # 내민 상자의 밑면
+        top = bx.get('top'); gc, gax, gLx, gLy, _ = mrr_axes(g); gax = np.array(gax, float)
+        if bx.get('crown'): skin(mb, orient(g.buffer(.3, join_style=2), 1.0), z1 - 5.0, lambda x, y, z1=z1: z1 + .2, mat_flat('#34404e'), 1, 1)
+        if top: _parapet(mb, g, z1, '#c3d0dc')
+        if top == 'main':
+            hc = at(*bx['heli']); hh = min(8.0, .3 * gLy); dk = Polygon([tuple(hc + gax * sx * hh + np.array([-gax[1], gax[0]]) * sy * hh) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+            obox(mb, hc, gax, hh, hh, z1, z1 + 3.0, mat_flat('#9aa2aa'), mat_flat('#b9bdc2')); helipad(mb, hc, gax, z1 + 3.0, hh * .92, '#aab0b6', '#ffffff', 'circle', .3)
+            roof_std(mb, g, z1, dk, z1 + 3.0, True, b['seed'])
+            for q in parts(g.buffer(-1.5, join_style=2).difference(dk.buffer(.05))):
+                if q.area > 6: capf(mb, orient(q, 1.0), lambda x, y, z1=z1: z1 + .09, mat_flat(cfg['deck']))
+        elif top in ('garden', 'green'):
+            inn = g.buffer(-2.2, join_style=2)
+            if top == 'garden':
+                for q in parts(inn): capf(mb, orient(q, 1.0), lambda x, y, z1=z1: z1 + .12, mat_flat('#8ea765'))
+            else:   # 초록 줄(기단 옥상의 식재 띠)
+                for t_ in np.arange(-gLy * .3, gLy * .3, 2.4):
+                    q = Polygon([tuple(gc + gax * sx * gLx * .22 + np.array([-gax[1], gax[0]]) * (t_ + sy * .7)) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]).intersection(inn)
+                    for q2 in parts(q):
+                        if q2.area > 2: capf(mb, orient(q2, 1.0), lambda x, y, z1=z1: z1 + .12, mat_flat('#7fae5a'))
     toonify(mb.build('b%d' % idx, idx))
 _SS = dict(glass='#5f8fca', fin='#c6d9ee', line='#3f6aa3', spc='#c3d0dc', lobby=10.0, deck='#c9cbcc')
-LMC['samsung_e'] = dict(_SS, vols=((.62, 'v', (0, 0)), (1.0, 'h', (-2.0, 1.5))), voids=(((-1, .6), 46, .62, .72, 1), ((1, 1), 40, .24, .31, 0)))   # 삼성전자: 북서 모퉁이 높은 틈(거리뷰), 북동 모퉁이 낮은 틈
-LMC['samsung_l'] = dict(_SS, vols=((.50, 'h', (0, 0)), (1.0, 'v', (-2.5, 0))), voids=(((0, 1), 40, .50, .58, 1), ((0, -1), 40, .74, .82, 1)))     # 삼성생명(어림)
-LMC['samsung_c'] = dict(_SS, vols=((.42, 'v', (0, 0)), (1.0, 'h', (2.5, 0))), voids=(((-1, 0), 36, .42, .50, 1), ((1, 0), 36, .72, .80, 1)))      # 삼성화재(어림)
+LMC['samsung_e'] = dict(_SS, ud=(-.36, .93), vd=(.93, .36), boxes=(          # 삼성전자: u = 남 → 북, v = 서 → 동
+    dict(r=(0, .22, 0, 1), z=(0, .20), k='h', top='green'),                   # 남쪽 끝 기단
+    dict(r=(.22, .50, 0, 1), z=(0, .50), k='h', top='plain'),                 # 중간 덩어리
+    dict(r=(.50, 1, .36, 1), z=(0, .33), k='v'),                              # 높은 몸통의 아래(세로 핀)
+    dict(r=(.50, 1, .36, 1), z=(.33, .38), k='d', inset=3.5),                 # 들어간 허리
+    dict(r=(.50, 1.02, .36, 1), z=(.38, 1.0), k='h', top='main', crown=True, heli=(.86, .68)),   # 가로줄 판(가장 높다)
+    dict(r=(.50, 1.035, -.04, .36), z=(0, .90), k='v', top='plain')))         # 서쪽 세로 핀 판(조금 낮고 조금 내밀었다)
+LMC['samsung_c'] = dict(_SS, ud=(.94, .34), vd=(-.34, .94), boxes=(          # 삼성화재: u = 서 → 동, v = 남 → 북
+    dict(r=(0, 1, 0, 1), cut=((-.1, .60, -.1, .32),), z=(0, 1.0), k='v', top='main', heli=(.84, .66)),   # 몸통
+    dict(r=(0, .60, -.03, .32), z=(0, .45), k='h', top='plain')))             # 남서쪽 앞의 낮은 상자
+LMC['samsung_l'] = dict(_SS, ud=(-.36, .93), vd=(.93, .36), boxes=(          # 삼성생명: u = 남 → 북, v = 서 → 동
+    dict(r=(0, 1, .25, .80), z=(0, 1.0), k='h', top='main', heli=(.5, .52)),  # 몸통
+    dict(r=(.08, .92, .80, 1), z=(0, .85), k='v', top='garden'),              # 동쪽에 붙은 조금 낮은 판
+    dict(r=(0, .50, 0, .25), z=(0, .50), k='h', top='garden'),                # 남서쪽 낮은 덩어리
+    dict(r=(.50, 1.03, -.09, .25), z=(.55, 1.02), k='v', top='plain')))       # 북서쪽에 내민 세로 핀 유리 상자
 LMB.update(samsung_e=samsung, samsung_c=samsung, samsung_l=samsung)
 def samsung_annex(b, idx):   # 삼성전자 동 북쪽의 낮은 별동
     ltower(b, idx, dict(glass='#3c4d63', line='#27323f', flh=4.2, bay=1.5, sp=.5, spc='#9aa8b6', lobby=8.0, kit=2, heli=False, deck='#6f8f6a'))
