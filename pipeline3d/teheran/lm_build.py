@@ -22,18 +22,24 @@ LMC.update({
     'gs': dict(glass='#93a0aa', line='#dfe3e6', flh=4.2, bay=1.5, sp=.30, spc='#d9dde0', lobby=10.0, crownband=3.0, kit=3),  # GS타워: 긴 면은 밝은 은회색 격자(거리뷰). 서쪽 끝면의 짙은 반사 유리는 crowns.py
     'meritz': dict(glass='#6f8fae', line='#4d6b88', flh=4.2, bay=1.5, sp=.20, lobby=9.0, kit=2, heli=('#4f9a78', '#f6f6f1'), heliflat=True, deck='#4f9a78'),
     'glass': dict(glass='#768a9b', line='#4d5f6e', flh=3.7, bay=1.5, sp=.30, spc='#aab3ba', lobby=8.0, kit=2, heli=('#8d949c', '#f1f1ec'), deck='#9a9c9e'),               # 글라스타워: 둥근 평면의 회청색 유리 + 가로 띠
-    'gt': dict(glass='#6f9cc0', line='#4c7396', flh=4.4, bay=1.6, sp=.14, spc='#e9eef0'),                                    # GT타워: 물결치는 유리면
+    'gt': dict(glass='#4b7fc0', line='#1c3050', flh=4.4, spc='#2b3f5c'),                                                     # GT타워: 짙은 파란 유리 + 짙은 세로 핀(아래 gt_wave)
     'coex': dict(),
 })
 
 def gt_wave(b, idx, cfg):
-    """GT타워: 평면이 높이에 따라 부풀었다 줄어드는 물결 유리면(긴 축·짧은 축의 위상이 다르다). 물결의 크기·주기는 추정."""
-    poly = orient(P(b['rings']), 1.0); c, ax_, Lx, Ly, _ = mrr_axes(poly); nv = np.array([-ax_[1], ax_[0]]); H = b['h']; mb = MB()
-    key = f"gt_{cfg['glass']}"; path, tw, th = grid_tex(key, cfg['glass'], cfg['line'], cfg['bay'], cfg['flh'], sp=cfg['sp'], spc=cfg['spc']); gm = mat_tex(path, 'g' + key)
-    loc = [((p[0] - c[0]) * ax_[0] + (p[1] - c[1]) * ax_[1], (p[0] - c[0]) * nv[0] + (p[1] - c[1]) * nv[1]) for p in list(poly.exterior.coords)[:-1]]
+    """GT타워(거리뷰 네 방향, 2026-11-14): 짙은 파란 반사 유리에 촘촘한 세로 핀이 바닥에서 꼭대기까지 물결을 따라 흐른다. 평면은 그대로 두고 높이에 따라 남북·동서로 흔들린다
+    (꼭대기는 남쪽으로, 그 아래는 북쪽으로 — 서쪽에서 본 옆모습). 흔들림 3 m·2 m 와 주기(높이에 1.3 번)는 사진 비례로 잡은 추정. 핀 간격은 그림에서 읽히게 실제(약 1.5 m)의 두 배로 했다."""
+    poly = orient(P(b['rings']), 1.0); c, ax_, Lx, Ly, _ = mrr_axes(poly); c, ax_ = np.array(c, float), np.array(ax_, float); nv = np.array([-ax_[1], ax_[0]]); H = b['h']; mb = MB()
+    aE, nS = (ax_ if ax_[0] > 0 else -ax_), (nv if nv[1] < 0 else -nv); g_, fin = cfg['glass'], cfg['line']; tw, th = 12.0, 2 * cfg['flh']
+    def draw(d):
+        for f in range(2): y = int((f + 1) * cfg['flh'] * RPPM); d.rectangle([0, y - int(.3 * RPPM), int(tw * RPPM), y - 1], fill=shade(g_, .84))   # 옅은 층 줄
+        for k in range(4): x = int(k * 3.0 * RPPM); d.rectangle([x, 0, x + int(.8 * RPPM) - 1, int(th * RPPM)], fill=fin)                         # 세로 핀
+    gm = mat_tex(_png(f'gtfin_{g_[1:]}', int(tw * RPPM), int(th * RPPM), g_, draw), 'gtfin' + g_)
+    loc = [np.array(p[:2]) - c for p in list(poly.exterior.coords)[:-1]]
     def ring(z):
-        t = 2 * math.pi * z / H; su, sv = 1 + .05 * math.sin(t + 2.2), 1 + .11 * math.sin(t * 1.5 + .4)
-        return [(c[0] + ax_[0] * u * su + nv[0] * v * sv, c[1] + ax_[1] * u * su + nv[1] * v * sv, z) for u, v in loc]
+        t = z / H; k = min(1.0, t / .1); ph = 2 * math.pi * 1.3 * (t - 1) + math.pi / 2
+        o = c + nS * (3.0 * k * math.sin(ph)) - aE * (2.0 * k * math.sin(ph + .9)); s_ = 1 + .03 * k * math.sin(.8 * ph + 2.0)
+        return [(o[0] + q[0] * s_, o[1] + q[1] * s_, z) for q in loc]
     zs = list(np.arange(0, H, cfg['flh'] / 2)) + [H]; R_ = [ring(z) for z in zs]; n = len(loc)
     s0 = np.cumsum([0] + [math.hypot(R_[0][(i + 1) % n][0] - R_[0][i][0], R_[0][(i + 1) % n][1] - R_[0][i][1]) for i in range(n)])
     for k in range(len(zs) - 1):
